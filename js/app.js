@@ -70,14 +70,14 @@ class MuunedApp {
         const statusElement = document.getElementById('data-status');
         
         try {
-            statusElement.innerHTML = '<span class="status-processing">⏳ Checking API...</span>';
+            statusElement.innerHTML = '<span class="status-processing">⏳ Checking Binance...</span>';
             
             const isConnected = await this.binanceAPI.checkConnectivity();
             
             if (isConnected) {
-                statusElement.innerHTML = '<span class="status-ready">✅ API Connected</span>';
+                statusElement.innerHTML = '<span class="status-ready">✅ Binance connected</span>';
             } else {
-                statusElement.innerHTML = '<span class="status-loading">❌ API Unavailable</span>';
+                statusElement.innerHTML = '<span class="status-loading">❌ Binance is unavailable</span>';
                 this.showWarning('Binance API is not accessible. Please check your internet connection.');
             }
             
