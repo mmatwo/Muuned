@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Muuned - Strategy Backtester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            color: #5a67d8;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #5a67d8;
+        }
+        
+        .param-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .run-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .run-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .run-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e2e8f0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            font-weight: 600;
+            color: #5a67d8;
+        }
+        
+        .results-container {
+            display: none;
+            grid-column: 1 / -1;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .metric-label {
+            color: #718096;
+            margin-top: 5px;
+        }
+        
+        .results-table {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #5a67d8;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        tr:hover {
+            background: #f7fafc;
+        }
+        
+        .status-indicator {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-loading {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .status-ready {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .param-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Muuned</h1>
+            <p>High-Performance Strategy Backtesting</p>
+        </div>
+        
+        <div class="main-grid">
+            <div class="card">
+                <h2>📊 Market Data</h2>
+                <div class="form-group">
+                    <label for="symbol">Symbol</label>
+                    <select id="symbol">
+                        <option value="BTCUSDT">BTC/USDT</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="interval">Candle Size</label>
+                    <select id="interval">
+                        <option value="1h">1 Hour</option>
+                        <option value="2h" selected>2 Hours</option>
+                        <option value="4h">4 Hours</option>
+                        <option value="1d">1 Day</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="startDate">Start Date</label>
+                    <input type="date" id="startDate" value="2024-01-01">
+                </div>
+                
+                <div class="form-group">
+                    <label for="endDate">End Date</label>
+                    <input type="date" id="endDate" value="2024-12-31">
+                </div>
+                
+                <div class="status-indicator" id="dataStatus">
+                    <span class="status-loading">⏳ Ready to Load</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>⚙️ Strategy Parameters</h2>
+                <div class="param-grid">
+                    <div class="form-group">
+                        <label for="emaFloor">EMA Floor</label>
+                        <input type="text" id="emaFloor" value="5,10,15,20" placeholder="5,10,15,20">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="emaCeiling">EMA Ceiling</label>
+                        <input type="text" id="emaCeiling" value="30,40,50,60" placeholder="30,40,50,60">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="volFloor">Vol Floor</label>
+                        <input type="text" id="volFloor" value="0.5,1.0" placeholder="0.5,1.0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="volCeiling">Vol Ceiling</label>
+                        <input type="text" id="volCeiling" value="1.5,2.0" placeholder="1.5,2.0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="smoothLength">Smooth Length</label>
+                        <input type="text" id="smoothLength" value="2,3" placeholder="2,3">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="forceBuyThreshold">Force Buy Threshold</label>
+                        <input type="text" id="forceBuyThreshold" value="-5,-6,-7" placeholder="-5,-6,-7">
+                    </div>
+                </div>
+                
+                <button class="run-btn" id="runBacktest">
+                    🚀 Run Backtest
+                </button>
+                
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Initializing...</div>
+                </div>
+            </div>
+            
+            <div class="card results-container" id="resultsContainer">
+                <h2>📈 Results</h2>
+                <div class="results-grid" id="resultsGrid">
+                    <!-- Results will be populated here -->
+                </div>
+                
+                <div class="results-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>EMA Floor</th>
+                                <th>EMA Ceiling</th>
+                                <th>Vol Floor</th>
+                                <th>Vol Ceiling</th>
+                                <th>Final Balance</th>
+                                <th>Win Rate</th>
+                                <th>Total Trades</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody">
+                            <!-- Results will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Binance API integration
+        class BinanceDataFetcher {
+            constructor() {
+                this.baseUrl = 'https://api.binance.com/api/v3';
+            }
+            
+            async fetchKlines(symbol, interval, startTime, endTime, limit = 1000) {
+                const url = `${this.baseUrl}/klines`;
+                const params = new URLSearchParams({
+                    symbol: symbol,
+                    interval: interval,
+                    startTime: startTime,
+                    endTime: endTime,
+                    limit: limit
+                });
+                
+                try {
+                    const response = await fetch(`${url}?${params}`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    
+                    const data = await response.json();
+                    return data.map(candle => ({
+                        open: parseFloat(candle[1]),
+                        high: parseFloat(candle[2]),
+                        low: parseFloat(candle[3]),
+                        close: parseFloat(candle[4]),
+                        volume: parseFloat(candle[5]),
+                        timestamp: parseInt(candle[0])
+                    }));
+                } catch (error) {
+                    console.error('Error fetching data from Binance:', error);
+                    throw error;
+                }
+            }
+            
+            async fetchHistoricalData(symbol, interval, startDate, endDate) {
+                const start = new Date(startDate).getTime();
+                const end = new Date(endDate).getTime();
+                const limit = 1000;
+                
+                let allData = [];
+                let currentStart = start;
+                
+                while (currentStart < end) {
+                    const batch = await this.fetchKlines(symbol, interval, currentStart, end, limit);
+                    if (batch.length === 0) break;
+                    
+                    allData = allData.concat(batch);
+                    currentStart = batch[batch.length - 1].timestamp + 1;
+                    
+                    // Add small delay to respect rate limits
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                return allData;
+            }
+        }
+        
+        // Backtesting engine
+        class BacktestEngine {
+            constructor() {
+                this.workers = [];
+                this.maxWorkers = navigator.hardwareConcurrency || 4;
+            }
+            
+            parseParameters(paramString) {
+                return paramString.split(',').map(x => parseFloat(x.trim()));
+            }
+            
+            generateParameterCombinations(params) {
+                const keys = Object.keys(params);
+                const values = keys.map(key => this.parseParameters(params[key]));
+                
+                const combinations = [];
+                const generate = (index, current) => {
+                    if (index === keys.length) {
+                        combinations.push({...current});
+                        return;
+                    }
+                    
+                    for (const value of values[index]) {
+                        current[keys[index]] = value;
+                        generate(index + 1, current);
+                    }
+                };
+                
+                generate(0, {});
+                return combinations;
+            }
+            
+            calculateEMA(prices, period) {
+                const ema = [];
+                const multiplier = 2 / (period + 1);
+                
+                // Start with SMA for first value
+                let sum = 0;
+                for (let i = 0; i < period && i < prices.length; i++) {
+                    sum += prices[i];
+                }
+                ema[period - 1] = sum / period;
+                
+                // Calculate EMA for remaining values
+                for (let i = period; i < prices.length; i++) {
+                    ema[i] = (prices[i] - ema[i - 1]) * multiplier + ema[i - 1];
+                }
+                
+                return ema;
+            }
+            
+            calculateVolatility(prices, window = 20) {
+                const volatility = [];
+                
+                for (let i = window - 1; i < prices.length; i++) {
+                    const slice = prices.slice(i - window + 1, i + 1);
+                    const mean = slice.reduce((a, b) => a + b) / slice.length;
+                    const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / slice.length;
+                    volatility[i] = Math.sqrt(variance);
+                }
+                
+                return volatility;
+            }
+            
+            runSingleBacktest(data, params) {
+                // Calculate signal price (OHLC4)
+                const signalPrices = data.map(candle => 
+                    (candle.high + candle.low + candle.close + candle.open) / 4
+                );
+                
+                // Calculate volatility
+                const volatility = this.calculateVolatility(signalPrices);
+                
+                // Dynamic EMA calculation based on volatility
+                const signals = [];
+                let coinBalance = 1.0;
+                let usdtBalance = 0.0;
+                const trades = [];
+                
+                for (let i = 20; i < data.length; i++) { // Start after volatility window
+                    const vol = volatility[i] || 0;
+                    const volPct = (vol / signalPrices[i]) * 100;
+                    
+                    // Calculate dynamic EMA length
+                    let emaLength;
+                    if (volPct <= params.volFloor) {
+                        emaLength = params.emaCeiling;
+                    } else if (volPct >= params.volCeiling) {
+                        emaLength = params.emaFloor;
+                    } else {
+                        const volRange = params.volCeiling - params.volFloor;
+                        const emaRange = params.emaCeiling - params.emaFloor;
+                        const volPosition = (volPct - params.volFloor) / volRange;
+                        emaLength = Math.round(params.emaFloor + ((1 - volPosition) * emaRange));
+                    }
+                    
+                    // Calculate EMA for current window
+                    const startIdx = Math.max(0, i - emaLength + 1);
+                    const priceSlice = signalPrices.slice(startIdx, i + 1);
+                    const ema = this.calculateEMA(priceSlice, Math.min(emaLength, priceSlice.length));
+                    const currentEma = ema[ema.length - 1];
+                    
+                    // Calculate differential
+                    const rawDiff = ((signalPrices[i] - currentEma) / currentEma) * 100;
+                    
+                    // Generate signal
+                    let signal = 0;
+                    if (rawDiff > 0 || rawDiff <= params.forceBuyThreshold) {
+                        signal = 1; // Buy
+                    } else if (rawDiff < 0) {
+                        signal = -1; // Sell
+                    }
+                    
+                    // Execute trades
+                    const price = data[i].close;
+                    
+                    if (signal === -1 && coinBalance > 0) {
+                        // Sell
+                        const usdtReceived = coinBalance * price * 0.999; // 0.1% fee
+                        usdtBalance += usdtReceived;
+                        coinBalance = 0;
+                        trades.push({ type: 'sell', price, timestamp: data[i].timestamp });
+                    } else if (signal === 1 && usdtBalance > 0) {
+                        // Buy
+                        const coinsReceived = (usdtBalance / price) * 0.999; // 0.1% fee
+                        coinBalance += coinsReceived;
+                        usdtBalance = 0;
+                        trades.push({ type: 'buy', price, timestamp: data[i].timestamp });
+                    }
+                }
+                
+                // Calculate final metrics
+                const finalPrice = data[data.length - 1].close;
+                const finalValue = coinBalance * finalPrice + usdtBalance;
+                const initialValue = 1.0 * data[0].close;
+                
+                // Calculate trade performance
+                const tradePairs = [];
+                for (let i = 0; i < trades.length - 1; i += 2) {
+                    if (trades[i].type === 'sell' && trades[i + 1] && trades[i + 1].type === 'buy') {
+                        const profit = trades[i].price - trades[i + 1].price;
+                        tradePairs.push(profit);
+                    }
+                }
+                
+                const winningTrades = tradePairs.filter(p => p > 0);
+                const winRate = tradePairs.length > 0 ? winningTrades.length / tradePairs.length : 0;
+                
+                return {
+                    parameters: params,
+                    finalValue,
+                    totalReturn: ((finalValue / initialValue) - 1) * 100,
+                    winRate: winRate * 100,
+                    totalTrades: trades.length,
+                    avgProfit: winningTrades.length > 0 ? winningTrades.reduce((a, b) => a + b, 0) / winningTrades.length : 0,
+                    trades
+                };
+            }
+            
+            async runParallelBacktests(data, parameterSets, onProgress) {
+                const results = [];
+                const batchSize = 10; // Process in batches to avoid blocking UI
+                
+                for (let i = 0; i < parameterSets.length; i += batchSize) {
+                    const batch = parameterSets.slice(i, i + batchSize);
+                    const batchResults = batch.map(params => this.runSingleBacktest(data, params));
+                    results.push(...batchResults);
+                    
+                    if (onProgress) {
+                        onProgress((i + batch.length) / parameterSets.length);
+                    }
+                    
+                    // Yield control to prevent blocking
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                }
+                
+                return results.sort((a, b) => b.finalValue - a.finalValue);
+            }
+        }
+        
+        // UI Management
+        class UIManager {
+            constructor() {
+                this.dataFetcher = new BinanceDataFetcher();
+                this.backtestEngine = new BacktestEngine();
+                this.currentData = null;
+                
+                this.initializeEventListeners();
+            }
+            
+            initializeEventListeners() {
+                document.getElementById('runBacktest').addEventListener('click', () => this.runBacktest());
+            }
+            
+            updateProgress(progress) {
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                const percentage = Math.round(progress * 100);
+                
+                progressFill.style.width = `${percentage}%`;
+                progressText.textContent = `Processing: ${percentage}%`;
+            }
+            
+            displayResults(results) {
+                const resultsContainer = document.getElementById('resultsContainer');
+                const resultsGrid = document.getElementById('resultsGrid');
+                const tableBody = document.getElementById('resultsTableBody');
+                
+                // Show results container
+                resultsContainer.style.display = 'block';
+                
+                // Display summary metrics
+                const best = results[0];
+                const avgReturn = results.reduce((sum, r) => sum + r.totalReturn, 0) / results.length;
+                const avgWinRate = results.reduce((sum, r) => sum + r.winRate, 0) / results.length;
+                
+                resultsGrid.innerHTML = `
+                    <div class="metric-card">
+                        <div class="metric-value">$${best.finalValue.toFixed(2)}</div>
+                        <div class="metric-label">Best Final Value</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${best.totalReturn.toFixed(1)}%</div>
+                        <div class="metric-label">Best Return</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${avgReturn.toFixed(1)}%</div>
+                        <div class="metric-label">Average Return</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${avgWinRate.toFixed(1)}%</div>
+                        <div class="metric-label">Average Win Rate</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${results.length}</div>
+                        <div class="metric-label">Total Combinations</div>
+                    </div>
+                `;
+                
+                // Display top results in table
+                tableBody.innerHTML = results.slice(0, 20).map((result, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${result.parameters.emaFloor}</td>
+                        <td>${result.parameters.emaCeiling}</td>
+                        <td>${result.parameters.volFloor}</td>
+                        <td>${result.parameters.volCeiling}</td>
+                        <td>$${result.finalValue.toFixed(2)}</td>
+                        <td>${result.winRate.toFixed(1)}%</td>
+                        <td>${result.totalTrades}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            async runBacktest() {
+                const runBtn = document.getElementById('runBacktest');
+                const progressContainer = document.getElementById('progressContainer');
+                
+                try {
+                    // Disable button and show progress
+                    runBtn.disabled = true;
+                    runBtn.textContent = 'Loading Data...';
+                    progressContainer.style.display = 'block';
+                    
+                    // Get form values
+                    const symbol = document.getElementById('symbol').value;
+                    const interval = document.getElementById('interval').value;
+                    const startDate = document.getElementById('startDate').value;
+                    const endDate = document.getElementById('endDate').value;
+                    
+                    // Load market data
+                    this.currentData = await this.dataFetcher.fetchHistoricalData(
+                        symbol, interval, startDate, endDate
+                    );
+                    
+                    console.log(`Loaded ${this.currentData.length} candles`);
+                    
+                    // Get strategy parameters
+                    const params = {
+                        emaFloor: document.getElementById('emaFloor').value,
+                        emaCeiling: document.getElementById('emaCeiling').value,
+                        volFloor: document.getElementById('volFloor').value,
+                        volCeiling: document.getElementById('volCeiling').value,
+                        smoothLength: document.getElementById('smoothLength').value,
+                        forceBuyThreshold: document.getElementById('forceBuyThreshold').value
+                    };
+                    
+                    // Generate parameter combinations
+                    const parameterSets = this.backtestEngine.generateParameterCombinations(params);
+                    console.log(`Testing ${parameterSets.length} parameter combinations`);
+                    
+                    // Update button text
+                    runBtn.textContent = `Running ${parameterSets.length} Tests...`;
+                    
+                    // Run backtests
+                    const results = await this.backtestEngine.runParallelBacktests(
+                        this.currentData,
+                        parameterSets,
+                        (progress) => this.updateProgress(progress)
+                    );
+                    
+                    // Display results
+                    this.displayResults(results);
+                    
+                } catch (error) {
+                    console.error('Error running backtest:', error);
+                    alert('Error running backtest: ' + error.message);
+                } finally {
+                    // Re-enable button
+                    runBtn.disabled = false;
+                    runBtn.textContent = '🚀 Run Backtest';
+                    progressContainer.style.display = 'none';
+                }
+            }
+        }
+        
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', () => {
+            new UIManager();
+        });
+    </script>
+</body>
+</html>
