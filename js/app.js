@@ -34,6 +34,9 @@ class MuunedApp {
             // Setup event listeners
             this.setupEventListeners();
             
+            // Connect script editor to parameter form
+            this.connectScriptEditorToParameterForm();
+            
             // Check API connectivity
             await this.checkAPIConnectivity();
             
@@ -43,6 +46,22 @@ class MuunedApp {
             console.error('❌ Failed to initialize application:', error);
             this.showError('Failed to initialize application: ' + error.message);
         }
+    }
+
+    /**
+     * Connect script editor changes to parameter form updates
+     */
+    connectScriptEditorToParameterForm() {
+        // Set up the callback to update parameters when script changes
+        this.scriptEditor.onScriptChange = (script) => {
+            console.log('[Muuned] Script changed, updating parameters...');
+            this.parameterForm.updateParametersFromScript(script);
+        };
+        
+        // Listen for parameter form updates
+        this.parameterForm.on('parametersUpdated', (discovery) => {
+            console.log(`[Muuned] Parameters updated: ${discovery.totalCount} parameters found`);
+        });
     }
 
     /**

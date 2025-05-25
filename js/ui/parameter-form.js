@@ -1,11 +1,13 @@
 /**
  * Parameter Form Component
- * Handles user input for market data and strategy parameters
+ * Dynamically generates form fields based on script parameters
  */
 class ParameterForm {
     constructor() {
         this.marketDataContainer = document.getElementById('market-data-form');
         this.strategyParametersContainer = document.getElementById('strategy-parameters-form');
+        this.parameterParser = new ParameterParser();
+        this.currentParameters = [];
         this.callbacks = {};
         
         this.initializeForm();
@@ -16,8 +18,146 @@ class ParameterForm {
      */
     initializeForm() {
         this.createMarketDataForm();
-        this.createStrategyParametersForm();
+        this.createDefaultParametersForm();
         this.attachEventListeners();
+    }
+
+    /**
+     * Update strategy parameters based on script content
+     * @param {string} script - Strategy script content
+     */
+    updateParametersFromScript(script) {
+        console.log('[Muuned] Analyzing script for parameters...');
+        
+        const discovery = this.parameterParser.discoverParameters(script);
+        this.currentParameters = discovery.parameters;
+        
+        console.log(`[Muuned] Found ${discovery.totalCount} parameters (${discovery.unknownCount} unknown)`);
+        
+        // Generate new form
+        this.createDynamicParametersForm(discovery);
+        
+        // Show warnings if any
+        const warnings = this.parameterParser.validateParameterCombinations(discovery.parameters);
+        if (warnings.length > 0) {
+            console.warn('[Muuned] Parameter warnings:', warnings);
+        }
+        
+        // Update parameter count
+        this.updateParameterCount();
+        
+        // Trigger callback
+        this.trigger('parametersUpdated', discovery);
+    }
+
+    /**
+     * Create dynamic parameter form based on discovered parameters
+     */
+    createDynamicParametersForm(discovery) {
+        if (discovery.parameters.length === 0) {
+            this.strategyParametersContainer.innerHTML = `
+                <div class="no-parameters">
+                    <p>ℹ️ No parameters detected in script.</p>
+                    <p>Use <code>params.parameterName</code> in your script to create parameters.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const formConfig = this.parameterParser.generateFormConfig(discovery.parameters);
+        let html = '';
+
+        // Add info about discovered parameters
+        html += `
+            <div class="parameters-info">
+                <p>📋 Found <strong>${discovery.totalParameters}</strong> parameters in your script</p>
+                ${discovery.unknownCount > 0 ? 
+                    `<p class="warning">⚠️ ${discovery.unknownCount} unknown parameters detected - using default settings</p>` : 
+                    ''}
+            </div>
+        `;
+
+        // Generate form sections by category
+        for (const [category, parameters] of Object.entries(formConfig.categories)) {
+            html += `
+                <div class="parameter-category">
+                    <h4 class="category-title">${category} Parameters</h4>
+                    <div class="param-grid">
+            `;
+            
+            for (const param of parameters) {
+                html += this.createParameterField(param);
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        // Add advanced parameters section
+        html += `
+            <div class="advanced-params" style="display: none;">
+                <h3>Advanced Parameters</h3>
+                <div class="param-grid">
+                    <div class="form-group">
+                        <label for="feesSlippage">Fees + Slippage (%)</label>
+                        <input type="number" id="feesSlippage" value="0.1" step="0.01" placeholder="0.1">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="button" id="toggleAdvanced" class="toggle-btn">
+                    Show Advanced Parameters
+                </button>
+                <button type="button" id="resetParams" class="reset-btn">
+                    Reset to Defaults
+                </button>
+            </div>
+        `;
+
+        this.strategyParametersContainer.innerHTML = html;
+        this.attachParameterEventListeners();
+    }
+
+    /**
+     * Create HTML for a single parameter field
+     */
+    createParameterField(param) {
+        const isUnknown = !param.isKnown;
+        const helpIcon = param.description ? 
+            `<span class="param-help" title="${param.description}">ⓘ</span>` : '';
+        
+        return `
+            <div class="form-group ${isUnknown ? 'unknown-param' : ''}">
+                <label for="${param.name}">
+                    ${param.label}
+                    ${helpIcon}
+                    ${isUnknown ? '<span class="unknown-badge">Custom</span>' : ''}
+                </label>
+                <input 
+                    type="text" 
+                    id="${param.name}" 
+                    value="${param.defaultValue}" 
+                    placeholder="${param.defaultValue}"
+                    data-param-name="${param.name}"
+                    data-param-type="${param.type}"
+                >
+            </div>
+        `;
+    }
+
+    /**
+     * Create default parameters form (when no script is analyzed)
+     */
+    createDefaultParametersForm() {
+        this.strategyParametersContainer.innerHTML = `
+            <div class="parameters-placeholder">
+                <p>⏳ Analyzing script for parameters...</p>
+                <p>Parameters will appear here based on your strategy script.</p>
+            </div>
+        `;
     }
 
     /**
@@ -61,92 +201,65 @@ class ParameterForm {
     }
 
     /**
-     * Create strategy parameters form
+     * Attach event listeners to parameter inputs
      */
-    createStrategyParametersForm() {
-        this.strategyParametersContainer.innerHTML = `
-            <div class="param-grid">
-                <div class="form-group">
-                    <label for="emaFloor">
-                        EMA Floor
-                        <span class="param-help" title="Shortest EMA periods to test">ⓘ</span>
-                    </label>
-                    <input type="text" id="emaFloor" value="5,10,15,20" placeholder="5,10,15,20">
-                </div>
-                
-                <div class="form-group">
-                    <label for="emaCeiling">
-                        EMA Ceiling
-                        <span class="param-help" title="Longest EMA periods to test">ⓘ</span>
-                    </label>
-                    <input type="text" id="emaCeiling" value="30,40,50,60" placeholder="30,40,50,60">
-                </div>
-                
-                <div class="form-group">
-                    <label for="volFloor">
-                        Vol Floor
-                        <span class="param-help" title="Low volatility threshold">ⓘ</span>
-                    </label>
-                    <input type="text" id="volFloor" value="0.5,1.0" placeholder="0.5,1.0">
-                </div>
-                
-                <div class="form-group">
-                    <label for="volCeiling">
-                        Vol Ceiling
-                        <span class="param-help" title="High volatility threshold">ⓘ</span>
-                    </label>
-                    <input type="text" id="volCeiling" value="1.5,2.0" placeholder="1.5,2.0">
-                </div>
-                
-                <div class="form-group">
-                    <label for="smoothLength">
-                        Smooth Length
-                        <span class="param-help" title="Signal smoothing period">ⓘ</span>
-                    </label>
-                    <input type="text" id="smoothLength" value="2,3" placeholder="2,3">
-                </div>
-                
-                <div class="form-group">
-                    <label for="forceBuyThreshold">
-                        Force Buy Threshold
-                        <span class="param-help" title="Extreme negative signal to force buy">ⓘ</span>
-                    </label>
-                    <input type="text" id="forceBuyThreshold" value="-5,-6,-7" placeholder="-5,-6,-7">
-                </div>
+    attachParameterEventListeners() {
+        // Parameter validation
+        const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
+        paramInputs.forEach(input => {
+            input.addEventListener('blur', () => this.validateParameter(input.dataset.paramName));
+            input.addEventListener('input', () => this.updateParameterCount());
+        });
+        
+        // Advanced parameters toggle
+        const toggleBtn = document.getElementById('toggleAdvanced');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => this.toggleAdvancedParams());
+        }
+        
+        // Reset parameters
+        const resetBtn = document.getElementById('resetParams');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetToDefaults());
+        }
+    }
+
+    /**
+     * Create market data configuration form
+     */
+    createMarketDataForm() {
+        this.marketDataContainer.innerHTML = `
+            <div class="form-group">
+                <label for="symbol">Symbol</label>
+                <select id="symbol">
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="ADAUSDT">ADA/USDT</option>
+                    <option value="DOTUSDT">DOT/USDT</option>
+                    <option value="LINKUSDT">LINK/USDT</option>
+                </select>
             </div>
             
-            <div class="advanced-params" style="display: none;">
-                <h3>Advanced Parameters</h3>
-                <div class="param-grid">
-                    <div class="form-group">
-                        <label for="voltScale">Volatility Scale</label>
-                        <input type="text" id="voltScale" value="1.0" placeholder="1.0">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="positionSize">Position Size</label>
-                        <input type="text" id="positionSize" value="1.0" placeholder="1.0">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="feesSlippage">Fees + Slippage (%)</label>
-                        <input type="number" id="feesSlippage" value="0.1" step="0.01" placeholder="0.1">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="volatilityWindow">Volatility Window</label>
-                        <input type="number" id="volatilityWindow" value="20" placeholder="20">
-                    </div>
-                </div>
+            <div class="form-group">
+                <label for="interval">Candle Size</label>
+                <select id="interval">
+                    <option value="1h">1 Hour</option>
+                    <option value="2h" selected>2 Hours</option>
+                    <option value="4h">4 Hours</option>
+                    <option value="6h">6 Hours</option>
+                    <option value="12h">12 Hours</option>
+                    <option value="1d">1 Day</option>
+                </select>
             </div>
             
-            <div class="form-actions">
-                <button type="button" id="toggleAdvanced" class="toggle-btn">
-                    Show Advanced Parameters
-                </button>
-                <button type="button" id="resetParams" class="reset-btn">
-                    Reset to Defaults
-                </button>
+            <div class="form-group">
+                <label for="startDate">Start Date</label>
+                <input type="date" id="startDate" value="${this.getDefaultStartDate()}">
+            </div>
+            
+            <div class="form-group">
+                <label for="endDate">End Date</label>
+                <input type="date" id="endDate" value="${this.getDefaultEndDate()}">
             </div>
         `;
     }
@@ -158,25 +271,98 @@ class ParameterForm {
         // Market data validation
         document.getElementById('startDate').addEventListener('change', () => this.validateDateRange());
         document.getElementById('endDate').addEventListener('change', () => this.validateDateRange());
-        
-        // Parameter validation
-        const paramInputs = ['emaFloor', 'emaCeiling', 'volFloor', 'volCeiling', 'smoothLength', 'forceBuyThreshold'];
-        paramInputs.forEach(id => {
-            document.getElementById(id).addEventListener('blur', () => this.validateParameter(id));
-        });
-        
-        // Advanced parameters toggle
-        document.getElementById('toggleAdvanced').addEventListener('click', () => this.toggleAdvancedParams());
-        
-        // Reset parameters
-        document.getElementById('resetParams').addEventListener('click', () => this.resetToDefaults());
-        
-        // Real-time parameter count update
-        paramInputs.forEach(id => {
-            document.getElementById(id).addEventListener('input', () => this.updateParameterCount());
-        });
     }
 
+    /**
+     * Get strategy parameters from current form
+     */
+    getStrategyParameters() {
+        const params = {};
+        
+        // Get parameters from current form
+        const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
+        
+        paramInputs.forEach(input => {
+            const paramName = input.dataset.paramName;
+            const paramType = input.dataset.paramType;
+            const value = input.value.trim();
+            
+            if (paramType === 'array') {
+                params[paramName] = this.parseParameterValues(value);
+            } else {
+                params[paramName] = parseFloat(value) || 0;
+            }
+        });
+        
+        // Add fixed parameters
+        const feesSlippageInput = document.getElementById('feesSlippage');
+        if (feesSlippageInput) {
+            params.feesSlippage = parseFloat(feesSlippageInput.value) / 100; // Convert to decimal
+        } else {
+            params.feesSlippage = 0.001; // Default
+        }
+        
+        return params;
+    }
+
+    /**
+     * Update parameter combination count
+     */
+    updateParameterCount() {
+        try {
+            const params = this.getStrategyParameters();
+            const combinations = this.calculateCombinations(params);
+            
+            let countElement = document.getElementById('param-count');
+            if (!countElement) {
+                countElement = document.createElement('div');
+                countElement.id = 'param-count';
+                countElement.className = 'param-count';
+                this.strategyParametersContainer.appendChild(countElement);
+            }
+            
+            const timeEstimate = this.estimateRunTime(combinations);
+            countElement.innerHTML = `
+                <strong>${combinations.toLocaleString()}</strong> parameter combinations
+                <br><small>Estimated runtime: ${timeEstimate}</small>
+            `;
+            
+            // Warn if too many combinations
+            if (combinations > 10000) {
+                countElement.classList.add('warning');
+                countElement.innerHTML += '<br><small style="color: #c53030;">⚠️ Large number of combinations - consider reducing parameters</small>';
+            } else {
+                countElement.classList.remove('warning');
+            }
+            
+        } catch (error) {
+            // Don't update count if parameters are invalid
+        }
+    }
+
+    /**
+     * Reset parameters to their default values
+     */
+    resetToDefaults() {
+        const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
+        
+        paramInputs.forEach(input => {
+            const paramName = input.dataset.paramName;
+            const paramDef = this.parameterParser.getParameterDefinition(paramName);
+            
+            if (paramDef) {
+                input.value = paramDef.defaultValue;
+            }
+        });
+        
+        // Reset fees/slippage
+        const feesSlippageInput = document.getElementById('feesSlippage');
+        if (feesSlippageInput) {
+            feesSlippageInput.value = '0.1';
+        }
+        
+        this.updateParameterCount();
+    }
     /**
      * Get default start date (6 months ago)
      */
@@ -224,49 +410,48 @@ class ParameterForm {
      */
     validateParameter(paramId) {
         const input = document.getElementById(paramId);
+        if (!input) return true;
+        
         const value = input.value.trim();
+        const paramType = input.dataset.paramType;
         
         let isValid = true;
         let message = '';
         
         try {
-            const parsed = this.parseParameterValues(value);
-            
-            if (parsed.length === 0) {
-                isValid = false;
-                message = 'At least one value required';
-            } else if (parsed.some(v => isNaN(v))) {
-                isValid = false;
-                message = 'All values must be numbers';
+            if (paramType === 'array') {
+                const parsed = this.parseParameterValues(value);
+                
+                if (parsed.length === 0) {
+                    isValid = false;
+                    message = 'At least one value required';
+                } else if (parsed.some(v => isNaN(v))) {
+                    isValid = false;
+                    message = 'All values must be numbers';
+                }
+                
+                // Get parameter definition for validation
+                const paramDef = this.parameterParser.getParameterDefinition(paramId);
+                if (paramDef && paramDef.validation) {
+                    const { min, max, maxCount } = paramDef.validation;
+                    
+                    if (maxCount && parsed.length > maxCount) {
+                        isValid = false;
+                        message = `Too many values (maximum ${maxCount})`;
+                    } else if (min !== undefined && parsed.some(v => v < min)) {
+                        isValid = false;
+                        message = `All values must be >= ${min}`;
+                    } else if (max !== undefined && parsed.some(v => v > max)) {
+                        isValid = false;
+                        message = `All values must be <= ${max}`;
+                    }
+                }
             } else {
-                // Parameter-specific validation
-                switch (paramId) {
-                    case 'emaFloor':
-                    case 'emaCeiling':
-                        if (parsed.some(v => v < 1 || v > 200)) {
-                            isValid = false;
-                            message = 'EMA periods should be between 1 and 200';
-                        }
-                        break;
-                    case 'volFloor':
-                    case 'volCeiling':
-                        if (parsed.some(v => v < 0 || v > 10)) {
-                            isValid = false;
-                            message = 'Volatility values should be between 0 and 10';
-                        }
-                        break;
-                    case 'smoothLength':
-                        if (parsed.some(v => v < 1 || v > 20)) {
-                            isValid = false;
-                            message = 'Smooth length should be between 1 and 20';
-                        }
-                        break;
-                    case 'forceBuyThreshold':
-                        if (parsed.some(v => v > 0 || v < -50)) {
-                            isValid = false;
-                            message = 'Force buy threshold should be between -50 and 0';
-                        }
-                        break;
+                // Single value validation
+                const numValue = parseFloat(value);
+                if (isNaN(numValue)) {
+                    isValid = false;
+                    message = 'Value must be a number';
                 }
             }
         } catch (error) {
@@ -318,41 +503,6 @@ class ParameterForm {
     }
 
     /**
-     * Update parameter combination count
-     */
-    updateParameterCount() {
-        try {
-            const params = this.getStrategyParameters();
-            const combinations = this.calculateCombinations(params);
-            
-            let countElement = document.getElementById('param-count');
-            if (!countElement) {
-                countElement = document.createElement('div');
-                countElement.id = 'param-count';
-                countElement.className = 'param-count';
-                this.strategyParametersContainer.appendChild(countElement);
-            }
-            
-            const timeEstimate = this.estimateRunTime(combinations);
-            countElement.innerHTML = `
-                <strong>${combinations.toLocaleString()}</strong> parameter combinations
-                <br><small>Estimated runtime: ${timeEstimate}</small>
-            `;
-            
-            // Warn if too many combinations
-            if (combinations > 10000) {
-                countElement.classList.add('warning');
-                countElement.innerHTML += '<br><small style="color: #c53030;">⚠️ Large number of combinations - consider reducing parameters</small>';
-            } else {
-                countElement.classList.remove('warning');
-            }
-            
-        } catch (error) {
-            // Don't update count if parameters are invalid
-        }
-    }
-
-    /**
      * Calculate total parameter combinations
      */
     calculateCombinations(params) {
@@ -384,6 +534,8 @@ class ParameterForm {
         const advancedParams = document.querySelector('.advanced-params');
         const toggleBtn = document.getElementById('toggleAdvanced');
         
+        if (!advancedParams || !toggleBtn) return;
+        
         if (advancedParams.style.display === 'none') {
             advancedParams.style.display = 'block';
             toggleBtn.textContent = 'Hide Advanced Parameters';
@@ -391,24 +543,6 @@ class ParameterForm {
             advancedParams.style.display = 'none';
             toggleBtn.textContent = 'Show Advanced Parameters';
         }
-    }
-
-    /**
-     * Reset all parameters to defaults
-     */
-    resetToDefaults() {
-        document.getElementById('emaFloor').value = '5,10,15,20,25,30,35,40,45,50,55,60,65,70';
-        document.getElementById('emaCeiling').value = '30,35,40,45,50,55,60,65,70';
-        document.getElementById('volFloor').value = '0.5,1.0';
-        document.getElementById('volCeiling').value = '1.5,2.0';
-        document.getElementById('smoothLength').value = '2,3,4,5,6,7,8,9';
-        document.getElementById('forceBuyThreshold').value = '-5,-6,-7';
-        document.getElementById('voltScale').value = '1.0';
-        document.getElementById('positionSize').value = '1.0';
-        document.getElementById('feesSlippage').value = '0.1';
-        document.getElementById('volatilityWindow').value = '20';
-        
-        this.updateParameterCount();
     }
 
     /**
@@ -424,38 +558,15 @@ class ParameterForm {
     }
 
     /**
-     * Get strategy parameters
-     */
-    getStrategyParameters() {
-        const params = {};
-        
-        // Basic parameters
-        params.emaFloor = this.parseParameterValues(document.getElementById('emaFloor').value);
-        params.emaCeiling = this.parseParameterValues(document.getElementById('emaCeiling').value);
-        params.volFloor = this.parseParameterValues(document.getElementById('volFloor').value);
-        params.volCeiling = this.parseParameterValues(document.getElementById('volCeiling').value);
-        params.smoothLength = this.parseParameterValues(document.getElementById('smoothLength').value);
-        params.forceBuyThreshold = this.parseParameterValues(document.getElementById('forceBuyThreshold').value);
-        
-        // Advanced parameters
-        params.voltScale = this.parseParameterValues(document.getElementById('voltScale').value);
-        params.positionSize = this.parseParameterValues(document.getElementById('positionSize').value);
-        
-        // Single values
-        params.feesSlippage = parseFloat(document.getElementById('feesSlippage').value) / 100; // Convert to decimal
-        params.volatilityWindow = parseInt(document.getElementById('volatilityWindow').value);
-        
-        return params;
-    }
-
-    /**
      * Validate all form inputs
      */
     validateAll() {
         const dateValid = this.validateDateRange();
         
-        const paramIds = ['emaFloor', 'emaCeiling', 'volFloor', 'volCeiling', 'smoothLength', 'forceBuyThreshold'];
-        const paramValidations = paramIds.map(id => this.validateParameter(id));
+        const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
+        const paramValidations = Array.from(paramInputs).map(input => 
+            this.validateParameter(input.dataset.paramName)
+        );
         
         return dateValid && paramValidations.every(v => v);
     }

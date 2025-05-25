@@ -346,6 +346,55 @@ constructor() {
 }
 
 /**
+ * Run single backtest (updated interface for custom scripts)
+ */
+async runSingle(processedData, params) {
+    try {
+        console.log('[Muuned] BacktestEngine.runSingle called with:');
+        console.log('processedData structure:', {
+            hasCandles: !!processedData.candles,
+            candlesLength: processedData.candles ? processedData.candles.length : 0,
+            hasPrices: !!processedData.prices,
+            pricesStructure: processedData.prices ? Object.keys(processedData.prices) : 'none',
+            ohlc4Type: processedData.prices && processedData.prices.ohlc4 ? typeof processedData.prices.ohlc4 : 'undefined',
+            ohlc4IsArray: processedData.prices && processedData.prices.ohlc4 ? Array.isArray(processedData.prices.ohlc4) : false,
+            ohlc4Length: processedData.prices && processedData.prices.ohlc4 ? processedData.prices.ohlc4.length : 0,
+            closeType: processedData.prices && processedData.prices.close ? typeof processedData.prices.close : 'undefined',
+            closeIsArray: processedData.prices && processedData.prices.close ? Array.isArray(processedData.prices.close) : false,
+            closeLength: processedData.prices && processedData.prices.close ? processedData.prices.close.length : 0
+        });
+        console.log('params:', params);
+        
+        // Create custom strategy that uses the script editor
+        const strategy = new CustomScriptStrategy(window.muunedApp.scriptEditor, params);
+        const signalData = strategy.calculateSignals(
+            processedData.prices.ohlc4,  // Use pre-calculated OHLC4
+            processedData.prices.close   // Use pre-calculated close prices
+        );
+        
+        // Run backtest with lightweight result
+        const backtester = new PortfolioBacktester({
+            initialCoins: 1.0,
+            positionSize: params.positionSize,
+            feesAndSlippage: params.feesSlippage
+        });
+        
+        const metrics = backtester.run(processedData.candles, signalData.signals);
+        
+        // Return lightweight result - no trade history or signal arrays
+        return {
+            parameters: params,
+            ...metrics,
+            signalCount: signalData.signalCount  // Just the count, not the full array
+        };
+        
+    } catch (error) {
+        console.error(`[Muuned] Error in runSingle:`, error);
+        throw error;
+    }
+}
+
+/**
  * Run batch with performance monitoring and memory management
  */
 async runBatch(processedData, parameterSets, onProgress = null) {
@@ -413,31 +462,6 @@ async runBatch(processedData, parameterSets, onProgress = null) {
     } finally {
         this.isRunning = false;
     }
-}
-
-/**
- * Run single backtest
- */
-async runSingle(candleData, params) {
-    // Create strategy and calculate signals
-    const strategy = new EmaDifferentialStrategy(params);
-    const signalData = strategy.calculateSignals(candleData);
-    
-    // Run backtest
-    const backtester = new PortfolioBacktester({
-        initialCoins: 1.0,
-        positionSize: params.positionSize,
-        feesAndSlippage: params.feesSlippage
-    });
-    
-    const metrics = backtester.run(candleData, signalData.signals);
-    
-    return {
-        parameters: params,
-        ...metrics,
-        trades: backtester.getTradeLog(),
-        signals: signalData
-    };
 }
 
 /**

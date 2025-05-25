@@ -29,6 +29,13 @@ class DataManager {
         const hlc3Prices = this.calculateHLC3(candleData);
         const hl2Prices = this.calculateHL2(candleData);
 
+        // Debug logging for price arrays
+        console.log('[Muuned] Price arrays created:');
+        console.log('OHLC4 length:', ohlc4Prices.length, 'isArray:', Array.isArray(ohlc4Prices));
+        console.log('Close length:', closePrices.length, 'isArray:', Array.isArray(closePrices));
+        console.log('Sample OHLC4 values:', ohlc4Prices.slice(0, 3));
+        console.log('Sample Close values:', closePrices.slice(0, 3));
+
         // Create processed data object
         this.processedData = {
             candles: candleData,

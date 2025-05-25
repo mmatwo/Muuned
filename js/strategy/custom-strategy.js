@@ -16,7 +16,21 @@ class CustomScriptStrategy {
      */
     calculateSignals(signalPrices, executionPrices) {
         try {
-            // Execute the user's script
+            console.log(`[Muuned] CustomScriptStrategy.calculateSignals called with:`);
+            console.log('signalPrices type:', typeof signalPrices, 'isArray:', Array.isArray(signalPrices));
+            console.log('executionPrices type:', typeof executionPrices, 'isArray:', Array.isArray(executionPrices));
+            console.log('this.params:', this.params);
+            
+            // Validate inputs
+            if (!Array.isArray(signalPrices) || !Array.isArray(executionPrices)) {
+                throw new Error('signalPrices and executionPrices must be arrays');
+            }
+            
+            if (signalPrices.length !== executionPrices.length) {
+                throw new Error('signalPrices and executionPrices must have the same length');
+            }
+            
+            // Execute the user's script with the correct parameter order
             const result = this.scriptEditor.executeScript(signalPrices, executionPrices, this.params);
             
             console.log(`[Muuned] Custom script generated ${result.signalCount} signals from ${result.length} candles`);
@@ -25,6 +39,9 @@ class CustomScriptStrategy {
             
         } catch (error) {
             console.error('[Muuned] Custom script execution failed:', error);
+            console.error('Received signalPrices:', signalPrices);
+            console.error('Received executionPrices:', executionPrices);
+            console.error('Params:', this.params);
             throw new Error(`Strategy script failed: ${error.message}`);
         }
     }

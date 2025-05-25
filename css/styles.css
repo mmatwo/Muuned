@@ -282,6 +282,112 @@ body {
     color: #c05621;
 }
 
+/* Dynamic Parameters Styling */
+.parameters-info {
+    background: #e6fffa;
+    border-left: 4px solid #38b2ac;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    border-radius: 0 6px 6px 0;
+}
+
+.parameters-info p {
+    margin: 0 0 5px 0;
+    color: #234e52;
+    font-size: 14px;
+}
+
+.parameters-info p:last-child {
+    margin-bottom: 0;
+}
+
+.parameters-info .warning {
+    color: #c05621;
+    background: #fef5e7;
+    padding: 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+}
+
+.parameter-category {
+    margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.parameter-category:last-child {
+    border-bottom: none;
+    margin-bottom: 15px;
+}
+
+.category-title {
+    color: #5a67d8;
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 15px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.unknown-param {
+    position: relative;
+}
+
+.unknown-badge {
+    background: #ed8936;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+    font-weight: 600;
+}
+
+.parameters-placeholder {
+    text-align: center;
+    padding: 40px 20px;
+    color: #718096;
+    background: #f7fafc;
+    border-radius: 8px;
+    border: 2px dashed #e2e8f0;
+}
+
+.parameters-placeholder p {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+}
+
+.parameters-placeholder p:last-child {
+    margin-bottom: 0;
+}
+
+.no-parameters {
+    text-align: center;
+    padding: 30px 20px;
+    background: #f7fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.no-parameters p {
+    margin: 0 0 10px 0;
+    color: #4a5568;
+    font-size: 14px;
+}
+
+.no-parameters p:last-child {
+    margin-bottom: 0;
+}
+
+.no-parameters code {
+    background: #e2e8f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    color: #2d3748;
+}
+
 /* Script Editor Component */
 .script-editor-header {
     display: flex;

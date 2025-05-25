@@ -67,6 +67,11 @@ class ScriptEditor {
         textarea.addEventListener('input', () => {
             this.currentScript = textarea.value;
             this.validateScript();
+            
+            // Notify parameter form of script changes
+            if (this.onScriptChange) {
+                this.onScriptChange(this.currentScript);
+            }
         });
         
         // Auto-resize textarea
@@ -74,8 +79,13 @@ class ScriptEditor {
             this.autoResizeTextarea(textarea);
         });
         
-        // Initial resize
+        // Initial resize and analysis
         this.autoResizeTextarea(textarea);
+        
+        // Trigger initial parameter analysis
+        if (this.onScriptChange) {
+            this.onScriptChange(this.currentScript);
+        }
     }
 
     /**
@@ -98,6 +108,14 @@ class ScriptEditor {
     }
 
     /**
+     * Set callback for script changes
+     * @param {Function} callback - Function to call when script changes
+     */
+    onScriptChange(callback) {
+        this.onScriptChange = callback;
+    }
+
+    /**
      * Reset script to default
      */
     resetScript() {
@@ -106,6 +124,11 @@ class ScriptEditor {
             document.getElementById('strategy-script').value = this.currentScript;
             this.validateScript();
             this.autoResizeTextarea(document.getElementById('strategy-script'));
+            
+            // Notify of script change
+            if (this.onScriptChange) {
+                this.onScriptChange(this.currentScript);
+            }
         }
     }
 
@@ -143,6 +166,25 @@ class ScriptEditor {
      */
     executeScript(signalPrices, executionPrices, params) {
         try {
+            // Debug logging to see what we're actually getting
+            console.log('[Muuned] Script execution debug:');
+            console.log('signalPrices type:', typeof signalPrices);
+            console.log('signalPrices isArray:', Array.isArray(signalPrices));
+            console.log('signalPrices length:', signalPrices ? signalPrices.length : 'undefined');
+            console.log('executionPrices type:', typeof executionPrices);
+            console.log('executionPrices isArray:', Array.isArray(executionPrices));
+            console.log('executionPrices length:', executionPrices ? executionPrices.length : 'undefined');
+            console.log('params:', params);
+            
+            // Validate inputs
+            if (!Array.isArray(signalPrices)) {
+                throw new Error(`signalPrices is not an array. Type: ${typeof signalPrices}, Value: ${signalPrices}`);
+            }
+            
+            if (!Array.isArray(executionPrices)) {
+                throw new Error(`executionPrices is not an array. Type: ${typeof executionPrices}, Value: ${executionPrices}`);
+            }
+            
             // Create a sandboxed function with the user's script
             const userFunction = new Function(
                 'signalPrices', 
@@ -201,6 +243,11 @@ class ScriptEditor {
         document.getElementById('strategy-script').value = script;
         this.validateScript();
         this.autoResizeTextarea(document.getElementById('strategy-script'));
+        
+        // Notify of script change
+        if (this.onScriptChange) {
+            this.onScriptChange(this.currentScript);
+        }
     }
 
     /**
