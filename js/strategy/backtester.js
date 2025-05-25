@@ -1,4 +1,170 @@
 /**
+ * Batch Backtest Engine
+ * Manages running multiple backtests efficiently
+ */
+class BacktestEngine {
+    constructor() {
+        this.isRunning = false;
+        this.results = [];
+    }
+
+    /**
+     * Calculate maximum drawdown from portfolio values array
+     */
+    calculateMaxDrawdown(portfolioValues) {
+        if (!portfolioValues || portfolioValues.length === 0) return 0;
+        
+        let peak = portfolioValues[0];
+        let maxDrawdown = 0;
+        
+        for (const value of portfolioValues) {
+            if (value > peak) {
+                peak = value;
+            }
+            
+            const drawdown = peak - value;
+            if (drawdown > maxDrawdown) {
+                maxDrawdown = drawdown;
+            }
+        }
+        
+        return maxDrawdown;
+    }
+
+    /**
+     * Run single backtest (updated interface for lightweight processing)
+     */
+    async runSingle(processedData, params) {
+        // Create strategy and calculate signals using pre-calculated price arrays
+        const strategy = new EmaDifferentialStrategy(params);
+        const signalData = strategy.calculateSignals(
+            processedData.prices.ohlc4,  // Use pre-calculated OHLC4
+            processedData.prices.close   // Use pre-calculated close prices
+        );
+        
+        // Run backtest with lightweight result
+        const backtester = new PortfolioBacktester({
+            initialCoins: 1.0,
+            positionSize: params.positionSize,
+            feesAndSlippage: params.feesSlippage
+        });
+        
+        const metrics = backtester.run(processedData.candles, signalData.signals);
+        
+        // Return lightweight result - no trade history or signal arrays
+        return {
+            parameters: params,
+            ...metrics,
+            signalCount: signalData.signalCount  // Just the count, not the full array
+        };
+    }
+
+    /**
+     * Run batch with performance monitoring and memory management
+     */
+    async runBatch(processedData, parameterSets, onProgress = null) {
+        this.isRunning = true;
+        this.results = [];
+        
+        const performanceMonitor = new PerformanceMonitor();
+        const batchSize = 50; // Process in smaller batches for better memory management
+        const totalBatches = Math.ceil(parameterSets.length / batchSize);
+        
+        performanceMonitor.logMemory('Batch processing start');
+        
+        try {
+            for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+                performanceMonitor.startTimer(`batch_${batchIndex}`);
+                
+                const batchStart = batchIndex * batchSize;
+                const batchEnd = Math.min(batchStart + batchSize, parameterSets.length);
+                const batch = parameterSets.slice(batchStart, batchEnd);
+                
+                // Process batch
+                const batchResults = [];
+                for (const params of batch) {
+                    try {
+                        const result = await this.runSingle(processedData, params);
+                        batchResults.push(result);
+                    } catch (error) {
+                        console.error(`[Muuned] Error in backtest:`, error);
+                        batchResults.push(this.createErrorResult(params, error));
+                    }
+                }
+                
+                this.results.push(...batchResults);
+                
+                const batchTime = performanceMonitor.endTimer(`batch_${batchIndex}`);
+                performanceMonitor.logBatchPerformance(batchIndex, totalBatches, batch.length, batchTime);
+                
+                if (onProgress) {
+                    onProgress(batchEnd / parameterSets.length, batchEnd, parameterSets.length);
+                }
+                
+                // Memory management: Force cleanup between batches
+                if ((batchIndex + 1) % 5 === 0) {
+                    // Clear intermediate variables and suggest GC every 5 batches
+                    batchResults.length = 0;
+                    if (window.gc) {
+                        window.gc();
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 10)); // Brief pause for GC
+                }
+                
+                // Yield control to prevent blocking UI
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+            
+            // Sort results by performance
+            this.results.sort((a, b) => b.finalValue - a.finalValue);
+            
+            // Generate performance summary
+            performanceMonitor.generateSummary(parameterSets.length);
+            performanceMonitor.logMemory('Batch processing complete');
+            
+            return this.results;
+            
+        } finally {
+            this.isRunning = false;
+        }
+    }
+
+    /**
+     * Create error result for failed backtest
+     */
+    createErrorResult(params, error) {
+        return {
+            parameters: params,
+            initialValue: 0,
+            finalValue: 0,
+            totalReturn: -100,
+            winRate: 0,
+            totalTrades: 0,
+            maxDrawdown: 0,
+            error: error.message,
+            isActive: false
+        };
+    }
+
+    /**
+     * Stop running backtests
+     */
+    stop() {
+        this.isRunning = false;
+    }
+
+    /**
+     * Get current status
+     */
+    getStatus() {
+        return {
+            isRunning: this.isRunning,
+            resultsCount: this.results.length
+        };
+    }
+}
+
+/**
  * Portfolio Backtester
  * Handles portfolio management, trade execution, and performance metrics
  */
@@ -99,7 +265,7 @@ class PortfolioBacktester {
     }
 
     /**
-     * Run complete backtest
+     * Run complete backtest and return lightweight metrics
      */
     run(candleData, signals) {
         this.reset();
@@ -108,6 +274,10 @@ class PortfolioBacktester {
             throw new Error('Invalid input data: candle data and signals must have same length');
         }
 
+        const startValue = this.initialCoins * candleData[0].close;
+        let tradeCount = 0;
+        const trades = []; // Keep minimal trade data for win/loss calculation
+
         // Process each candle
         for (let i = 0; i < candleData.length; i++) {
             const candle = candleData[i];
@@ -115,86 +285,102 @@ class PortfolioBacktester {
             
             // Execute trade if signal present
             if (signal !== 0) {
-                this.executeTrade(i, candle, signal);
+                const trade = this.executeTrade(i, candle, signal);
+                if (trade) {
+                    tradeCount++;
+                    // Store only essential trade data for metrics calculation
+                    trades.push({
+                        type: trade.type,
+                        price: trade.price,
+                        amount: trade.amount,
+                        index: i
+                    });
+                }
             }
             
-            // Track portfolio value
-            const totalValue = this.calculateTotalValue(candle.close);
-            this.portfolioValues.push({
-                index: i,
-                timestamp: candle.timestamp,
-                price: candle.close,
-                coinBalance: this.coinBalance,
-                usdtBalance: this.usdtBalance,
-                totalValue: totalValue
-            });
+            // Track only final portfolio value (not full history)
+            this.portfolioValues.push(this.calculateTotalValue(candle.close));
         }
 
-        // Calculate final metrics
-        return this.calculateMetrics(candleData);
+        // Calculate lightweight metrics
+        return this.calculateLightweightMetrics(candleData, trades, startValue);
     }
 
     /**
-     * Calculate performance metrics
+     * Calculate essential metrics without storing heavy data
      */
-    calculateMetrics(candleData) {
-        if (!candleData || candleData.length === 0) {
-            throw new Error('No candle data available for metrics calculation');
-        }
-
-        const initialPrice = candleData[0].close;
+    calculateLightweightMetrics(candleData, trades, startValue) {
         const finalPrice = candleData[candleData.length - 1].close;
-        
-        const initialValue = this.initialCoins * initialPrice;
         const finalValue = this.calculateTotalValue(finalPrice);
         
         // Calculate trade pairs for win/loss analysis
-        const tradePairs = this.calculateTradePairs();
+        const tradePairs = this.calculateTradePairsFromMinimalData(trades);
         const winningTrades = tradePairs.filter(pair => pair.profit > 0);
-        const losingTrades = tradePairs.filter(pair => pair.profit <= 0);
         
-        // Calculate drawdown
-        const maxDrawdown = this.calculateMaxDrawdown();
+        // Calculate drawdown from portfolio values
+        const maxDrawdown = this.calculateMaxDrawdown(this.portfolioValues);
         
         const metrics = {
-            // Portfolio metrics
-            initialValue: initialValue,
+            // Essential portfolio metrics
+            initialValue: startValue,
             finalValue: finalValue,
-            totalReturn: ((finalValue / initialValue) - 1) * 100,
+            totalReturn: ((finalValue / startValue) - 1) * 100,
             
             // Trade metrics
-            totalTrades: this.trades.length,
-            tradePairs: tradePairs.length,
+            totalTrades: trades.length,
             winRate: tradePairs.length > 0 ? (winningTrades.length / tradePairs.length) * 100 : 0,
             
             // Profit/Loss metrics
             avgProfit: winningTrades.length > 0 ? 
                 winningTrades.reduce((sum, trade) => sum + trade.profit, 0) / winningTrades.length : 0,
-            avgLoss: losingTrades.length > 0 ? 
-                losingTrades.reduce((sum, trade) => sum + Math.abs(trade.profit), 0) / losingTrades.length : 0,
             
             // Risk metrics
             maxDrawdown: maxDrawdown,
-            maxDrawdownPct: initialValue > 0 ? (maxDrawdown / initialValue) * 100 : 0,
+            maxDrawdownPct: startValue > 0 ? (maxDrawdown / startValue) * 100 : 0,
             
-            // Fee analysis
-            totalFees: this.totalFeesPaid,
-            feesAsPctOfReturn: finalValue > 0 ? (this.totalFeesPaid / finalValue) * 100 : 0,
-            
-            // Position info
+            // Position info (only final state)
             finalCoinBalance: this.coinBalance,
             finalUsdtBalance: this.usdtBalance,
             
-            // Trading period
+            // Status
+            isActive: this.coinBalance > 0,
+            
+            // Minimal metadata
             startDate: new Date(candleData[0].timestamp),
             endDate: new Date(candleData[candleData.length - 1].timestamp),
             
-            // Status
-            isActive: this.coinBalance > 0,
-            lastTradeType: this.trades.length > 0 ? this.trades[this.trades.length - 1].type : null
+            // Fee info
+            totalFees: this.totalFeesPaid
         };
 
+        // Clear heavy arrays immediately after calculation
+        this.portfolioValues = [];
+        
         return metrics;
+    }
+
+    /**
+     * Calculate trade pairs from minimal trade data
+     */
+    calculateTradePairsFromMinimalData(trades) {
+        const pairs = [];
+        let currentBuy = null;
+        
+        for (const trade of trades) {
+            if (trade.type === 'buy') {
+                currentBuy = trade;
+            } else if (trade.type === 'sell' && currentBuy) {
+                const profit = (trade.price - currentBuy.price) * currentBuy.amount;
+                pairs.push({
+                    profit: profit,
+                    profitPct: ((trade.price - currentBuy.price) / currentBuy.price) * 100,
+                    holdingPeriod: trade.index - currentBuy.index
+                });
+                currentBuy = null;
+            }
+        }
+        
+        return pairs;
     }
 
     /**
@@ -226,18 +412,20 @@ class PortfolioBacktester {
     /**
      * Calculate maximum drawdown
      */
-    calculateMaxDrawdown() {
-        if (this.portfolioValues.length === 0) return 0;
+    calculateMaxDrawdown(portfolioValues) {
+        if (!portfolioValues || portfolioValues.length === 0) return 0;
         
-        let peak = this.portfolioValues[0].totalValue;
+        let peak = portfolioValues[0];
         let maxDrawdown = 0;
         
-        for (const value of this.portfolioValues) {
-            if (value.totalValue > peak) {
-                peak = value.totalValue;
+        for (const value of portfolioValues) {
+            const currentValue = typeof value === 'object' ? value.totalValue : value;
+            
+            if (currentValue > peak) {
+                peak = currentValue;
             }
             
-            const drawdown = peak - value.totalValue;
+            const drawdown = peak - currentValue;
             if (drawdown > maxDrawdown) {
                 maxDrawdown = drawdown;
             }
@@ -311,112 +499,6 @@ class PortfolioBacktester {
         return {
             isValid: errors.length === 0,
             errors: errors
-        };
-    }
-}
-
-/**
- * Batch Backtest Engine
- * Manages running multiple backtests efficiently
- */
-class BacktestEngine {
-    constructor() {
-        this.isRunning = false;
-        this.results = [];
-    }
-
-    /**
-     * Run multiple backtests with different parameter sets
-     */
-    async runBatch(candleData, parameterSets, onProgress = null) {
-        this.isRunning = true;
-        this.results = [];
-        
-        try {
-            for (let i = 0; i < parameterSets.length; i++) {
-                const params = parameterSets[i];
-                
-                try {
-                    const result = await this.runSingle(candleData, params);
-                    this.results.push(result);
-                } catch (error) {
-                    console.error(`Error in backtest ${i + 1}:`, error);
-                    this.results.push(this.createErrorResult(params, error));
-                }
-                
-                if (onProgress) {
-                    onProgress((i + 1) / parameterSets.length, i + 1, parameterSets.length);
-                }
-                
-                // Yield control periodically
-                if (i % 10 === 0) {
-                    await new Promise(resolve => setTimeout(resolve, 1));
-                }
-            }
-            
-            return this.results.sort((a, b) => b.finalValue - a.finalValue);
-            
-        } finally {
-            this.isRunning = false;
-        }
-    }
-
-    /**
-     * Run single backtest
-     */
-    async runSingle(candleData, params) {
-        // Create strategy and calculate signals
-        const strategy = new EmaDifferentialStrategy(params);
-        const signalData = strategy.calculateSignals(candleData);
-        
-        // Run backtest
-        const backtester = new PortfolioBacktester({
-            initialCoins: 1.0,
-            positionSize: params.positionSize,
-            feesAndSlippage: params.feesSlippage
-        });
-        
-        const metrics = backtester.run(candleData, signalData.signals);
-        
-        return {
-            parameters: params,
-            ...metrics,
-            trades: backtester.getTradeLog(),
-            signals: signalData
-        };
-    }
-
-    /**
-     * Create error result for failed backtest
-     */
-    createErrorResult(params, error) {
-        return {
-            parameters: params,
-            initialValue: 0,
-            finalValue: 0,
-            totalReturn: -100,
-            winRate: 0,
-            totalTrades: 0,
-            maxDrawdown: 0,
-            error: error.message,
-            isActive: false
-        };
-    }
-
-    /**
-     * Stop running backtests
-     */
-    stop() {
-        this.isRunning = false;
-    }
-
-    /**
-     * Get current status
-     */
-    getStatus() {
-        return {
-            isRunning: this.isRunning,
-            resultsCount: this.results.length
         };
     }
 }

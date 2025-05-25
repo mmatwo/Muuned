@@ -5,6 +5,7 @@
 class MuunedApp {
     constructor() {
         this.binanceAPI = new BinanceAPI();
+        this.dataManager = new DataManager();
         this.parameterForm = new ParameterForm();
         this.progressBar = null;
         this.resultsDisplay = null;
@@ -23,7 +24,8 @@ class MuunedApp {
         console.log('🚀 Initializing Muuned Application...');
         
         try {
-            // Initialize UI components
+            // Initialize core components
+            this.dataManager = new DataManager();
             this.progressBar = new ProgressBar('progress-container');
             this.resultsDisplay = new ResultsDisplay('results-display', 'results-container');
             this.backtester = new BacktestEngine();
@@ -70,14 +72,14 @@ class MuunedApp {
         const statusElement = document.getElementById('data-status');
         
         try {
-            statusElement.innerHTML = '<span class="status-processing">⏳ Checking Binance...</span>';
+            statusElement.innerHTML = '<span class="status-processing">⏳ Checking API...</span>';
             
             const isConnected = await this.binanceAPI.checkConnectivity();
             
             if (isConnected) {
-                statusElement.innerHTML = '<span class="status-ready">✅ Binance connected</span>';
+                statusElement.innerHTML = '<span class="status-ready">✅ API Connected</span>';
             } else {
-                statusElement.innerHTML = '<span class="status-loading">❌ Binance is unavailable</span>';
+                statusElement.innerHTML = '<span class="status-loading">❌ API Unavailable</span>';
                 this.showWarning('Binance API is not accessible. Please check your internet connection.');
             }
             
@@ -118,7 +120,7 @@ class MuunedApp {
     }
 
     /**
-     * Main backtest execution function
+     * Main backtest execution function (updated for optimized processing)
      */
     async runBacktest() {
         if (this.isRunning) return;
@@ -136,16 +138,16 @@ class MuunedApp {
             const marketConfig = this.parameterForm.getMarketDataConfig();
             const strategyParams = this.parameterForm.getStrategyParameters();
             
-            console.log('📊 Starting backtest with config:', { marketConfig, strategyParams });
+            console.log('📊 Starting optimized backtest with config:', { marketConfig, strategyParams });
             
-            // Step 1: Load market data
+            // Step 1: Load and process market data (with pre-calculated arrays)
             await this.loadMarketData(marketConfig);
             
             // Step 2: Generate parameter combinations
             const parameterSets = this.generateParameterCombinations(strategyParams);
             console.log(`🔄 Testing ${parameterSets.length} parameter combinations`);
             
-            // Step 3: Run backtests
+            // Step 3: Run optimized backtests
             const results = await this.runParallelBacktests(parameterSets);
             
             // Step 4: Display results
@@ -161,11 +163,14 @@ class MuunedApp {
             this.isRunning = false;
             this.progressBar.hide();
             this.updateRunButtonState();
+            
+            // Optional: Clear cache after backtest to free memory
+            // this.dataManager.clearCache();
         }
     }
 
     /**
-     * Load market data from Binance
+     * Load market data from Binance and process it
      */
     async loadMarketData(config) {
         console.log('📥 Loading market data...');
@@ -173,7 +178,8 @@ class MuunedApp {
         this.progressBar.show();
         this.progressBar.updateProgress(0, 'Loading market data...');
         
-        this.currentData = await this.binanceAPI.fetchHistoricalData(
+        // Fetch raw data from Binance
+        const rawData = await this.binanceAPI.fetchHistoricalData(
             config.symbol,
             config.interval,
             config.startDate,
@@ -183,15 +189,21 @@ class MuunedApp {
             }
         );
         
-        if (!this.currentData || this.currentData.length === 0) {
+        if (!rawData || rawData.length === 0) {
             throw new Error('No market data loaded');
         }
         
-        console.log(`✅ Loaded ${this.currentData.length} candles`);
+        // Process data with pre-calculated arrays
+        this.dataManager.setSymbol(config.symbol);
+        this.currentData = this.dataManager.processMarketData(rawData);
+        
+        console.log(`✅ Loaded and processed ${rawData.length} candles`);
         
         // Update data status
         const statusElement = document.getElementById('data-status');
-        statusElement.innerHTML = `<span class="status-ready">✅ ${this.currentData.length} candles loaded</span>`;
+        statusElement.innerHTML = `<span class="status-ready">✅ ${rawData.length} candles processed</span>`;
+        
+        return this.currentData;
     }
 
     /**
@@ -227,108 +239,33 @@ class MuunedApp {
     }
 
     /**
-     * Run backtests in parallel batches
+     * Run backtests using the optimized batch engine
      */
     async runParallelBacktests(parameterSets) {
-        const results = [];
-        const batchSize = 50; // Process in batches to avoid blocking UI
-        const totalBatches = Math.ceil(parameterSets.length / batchSize);
+        console.log(`🔄 Starting optimized backtesting for ${parameterSets.length} combinations`);
         
-        this.progressBar.updateProgress(0.3, 'Running backtests...');
+        this.progressBar.updateProgress(0.3, 'Starting backtests...');
         
-        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            const batchStart = batchIndex * batchSize;
-            const batchEnd = Math.min(batchStart + batchSize, parameterSets.length);
-            const batch = parameterSets.slice(batchStart, batchEnd);
-            
-            // Process batch
-            const batchResults = await this.processBatch(batch);
-            results.push(...batchResults);
-            
-            // Update progress
-            const progress = 0.3 + (0.7 * (batchIndex + 1) / totalBatches);
-            const completed = batchEnd;
-            this.progressBar.updateProgress(
-                progress, 
-                `Processed ${completed}/${parameterSets.length} combinations`
-            );
-            
-            // Yield control to prevent blocking
-            await this.sleep(1);
-        }
-        
-        // Sort results by performance
-        return results.sort((a, b) => b.finalValue - a.finalValue);
-    }
-
-    /**
-     * Process a batch of parameter combinations
-     */
-    async processBatch(parameterBatch) {
-        const batchResults = [];
-        
-        for (const params of parameterBatch) {
-            try {
-                const result = await this.runSingleBacktest(params);
-                batchResults.push(result);
-            } catch (error) {
-                console.error('Error in single backtest:', error);
-                // Add error result to maintain count
-                batchResults.push(this.createErrorResult(params, error));
+        // Use the optimized batch engine with performance monitoring
+        const results = await this.backtester.runBatch(
+            this.currentData,  // This is now processed data with pre-calculated arrays
+            parameterSets,
+            (progress, completed, total) => {
+                const overallProgress = 0.3 + (0.7 * progress);
+                this.progressBar.updateProgress(
+                    overallProgress, 
+                    `Processed ${completed}/${total} combinations`
+                );
             }
-        }
+        );
         
-        return batchResults;
-    }
-
-    /**
-     * Run a single backtest with given parameters
-     */
-    async runSingleBacktest(params) {
-        // Create strategy instance
-        const strategy = new EmaDifferentialStrategy(params);
-        
-        // Calculate signals
-        const signalData = strategy.calculateSignals(this.currentData);
-        
-        // Run backtest
-        const backtester = new PortfolioBacktester({
-            initialCoins: 1.0,
-            positionSize: params.positionSize,
-            feesAndSlippage: params.feesSlippage
-        });
-        
-        const backtestResult = backtester.run(this.currentData, signalData.signals);
-        
-        return {
-            parameters: params,
-            ...backtestResult,
-            signalData: signalData
-        };
-    }
-
-    /**
-     * Create error result for failed backtest
-     */
-    createErrorResult(params, error) {
-        return {
-            parameters: params,
-            finalValue: 0,
-            totalReturn: -100,
-            winRate: 0,
-            totalTrades: 0,
-            maxDrawdown: 0,
-            error: error.message
-        };
+        console.log(`✅ Completed ${parameterSets.length} backtests`);
+        return results;
     }
 
     /**
      * Utility functions
      */
-    sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
     showError(message) {
         this.showNotification(message, 'error');
     }
@@ -372,11 +309,12 @@ class MuunedApp {
         return {
             isRunning: this.isRunning,
             hasData: !!this.currentData,
-            dataLength: this.currentData ? this.currentData.length : 0,
+            dataLength: this.currentData ? this.currentData.metadata.length : 0,
             apiConnected: true // Will be updated by connectivity check
         };
     }
 }
+
 
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {

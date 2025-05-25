@@ -50,63 +50,50 @@ class EmaDifferentialStrategy {
     }
 
     /**
-     * Calculate trading signals for the given market data
-     * @param {Array} candleData - Array of candlestick objects
-     * @returns {Object} Signal data with indicators and signals
+     * Calculate trading signals using pre-calculated price arrays
+     * @param {Array} signalPrices - Pre-calculated OHLC4 prices
+     * @param {Array} executionPrices - Pre-calculated close prices
+     * @returns {Object} Signal data with indicators and signals (lightweight)
      */
-    calculateSignals(candleData) {
-        const result = {
-            prices: [],
-            executionPrices: [],
-            volatility: [],
-            volatilityPct: [],
-            emaLengths: [],
-            ema: [],
-            rawDiff: [],
-            smoothDiff: [],
-            signals: []
-        };
-
-        // Calculate OHLC4 price (signal price)
-        result.prices = TechnicalIndicators.ohlc4(candleData);
-        
-        // Use close price for execution
-        result.executionPrices = candleData.map(candle => candle.close);
+    calculateSignals(signalPrices, executionPrices) {
+        // Use pre-calculated arrays instead of recalculating
+        const prices = signalPrices;
+        const execPrices = executionPrices;
 
         // Calculate rolling volatility
-        result.volatility = TechnicalIndicators.rollingStd(result.prices, this.volatilityWindow);
+        const volatility = TechnicalIndicators.rollingStd(prices, this.volatilityWindow);
         
         // Calculate volatility as percentage of price
-        result.volatilityPct = result.volatility.map((vol, i) => {
-            if (vol !== undefined && result.prices[i] > 0) {
-                return (vol / result.prices[i]) * 100;
+        const volatilityPct = volatility.map((vol, i) => {
+            if (vol !== undefined && prices[i] > 0) {
+                return (vol / prices[i]) * 100;
             }
             return undefined;
         });
 
         // Calculate dynamic EMA lengths
-        result.emaLengths = result.volatilityPct.map(volPct => 
+        const emaLengths = volatilityPct.map(volPct => 
             this.calculateDynamicEmaLength(volPct)
         );
 
         // Calculate dynamic EMAs
-        result.ema = this.calculateDynamicEMA(result.prices, result.emaLengths);
+        const ema = this.calculateDynamicEMA(prices, emaLengths);
 
         // Calculate differential as percentage
-        result.rawDiff = result.prices.map((price, i) => {
-            if (result.ema[i] !== undefined && result.ema[i] > 0) {
-                return ((price - result.ema[i]) / result.ema[i]) * 100 * this.voltScale;
+        const rawDiff = prices.map((price, i) => {
+            if (ema[i] !== undefined && ema[i] > 0) {
+                return ((price - ema[i]) / ema[i]) * 100 * this.voltScale;
             }
             return undefined;
         });
 
         // Smooth the differential
-        const validRawDiff = result.rawDiff.filter(val => val !== undefined);
+        const validRawDiff = rawDiff.filter(val => val !== undefined);
         const smoothedValid = TechnicalIndicators.smooth(validRawDiff, this.smoothLength);
         
         // Map smoothed values back to original array positions
         let smoothIndex = 0;
-        result.smoothDiff = result.rawDiff.map(val => {
+        const smoothDiff = rawDiff.map(val => {
             if (val !== undefined) {
                 return smoothedValid[smoothIndex++];
             }
@@ -114,7 +101,7 @@ class EmaDifferentialStrategy {
         });
 
         // Generate trading signals
-        result.signals = result.smoothDiff.map(smoothDiff => {
+        const signals = smoothDiff.map(smoothDiff => {
             if (smoothDiff === undefined) return 0;
             
             if (smoothDiff > 0 || smoothDiff <= this.forceBuyThreshold) {
@@ -125,7 +112,13 @@ class EmaDifferentialStrategy {
             return 0; // No signal
         });
 
-        return result;
+        // Return lightweight result - only signals array for backtesting
+        // Don't store heavy arrays to prevent memory accumulation
+        return {
+            signals: signals,
+            signalCount: signals.filter(s => s !== 0).length,
+            length: signals.length
+        };
     }
 
     /**

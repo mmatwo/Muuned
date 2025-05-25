@@ -397,11 +397,11 @@ class ParameterForm {
      * Reset all parameters to defaults
      */
     resetToDefaults() {
-        document.getElementById('emaFloor').value = '5,10,15,20';
-        document.getElementById('emaCeiling').value = '30,40,50,60';
+        document.getElementById('emaFloor').value = '5,10,15,20,25,30,35,40,45,50,55,60,65,70';
+        document.getElementById('emaCeiling').value = '30,35,40,45,50,55,60,65,70';
         document.getElementById('volFloor').value = '0.5,1.0';
         document.getElementById('volCeiling').value = '1.5,2.0';
-        document.getElementById('smoothLength').value = '2,3';
+        document.getElementById('smoothLength').value = '2,3,4,5,6,7,8,9';
         document.getElementById('forceBuyThreshold').value = '-5,-6,-7';
         document.getElementById('voltScale').value = '1.0';
         document.getElementById('positionSize').value = '1.0';
