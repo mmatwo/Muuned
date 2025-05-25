@@ -6,6 +6,7 @@ class MuunedApp {
     constructor() {
         this.binanceAPI = new BinanceAPI();
         this.dataManager = new DataManager();
+        this.scriptEditor = new ScriptEditor('script-editor');
         this.parameterForm = new ParameterForm();
         this.progressBar = null;
         this.resultsDisplay = null;
@@ -314,7 +315,6 @@ class MuunedApp {
         };
     }
 }
-
 
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
