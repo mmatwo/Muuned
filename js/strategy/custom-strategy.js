@@ -16,10 +16,10 @@ class CustomScriptStrategy {
      */
     calculateSignals(signalPrices, executionPrices) {
         try {
-            console.log(`[Muuned] CustomScriptStrategy.calculateSignals called with:`);
-            console.log('signalPrices type:', typeof signalPrices, 'isArray:', Array.isArray(signalPrices));
-            console.log('executionPrices type:', typeof executionPrices, 'isArray:', Array.isArray(executionPrices));
-            console.log('this.params:', this.params);
+            // console.log(`[Muuned] CustomScriptStrategy.calculateSignals called with:`);
+            // console.log('signalPrices type:', typeof signalPrices, 'isArray:', Array.isArray(signalPrices));
+            // console.log('executionPrices type:', typeof executionPrices, 'isArray:', Array.isArray(executionPrices));
+            // console.log('this.params:', this.params);
             
             // Validate inputs
             if (!Array.isArray(signalPrices) || !Array.isArray(executionPrices)) {
@@ -33,7 +33,7 @@ class CustomScriptStrategy {
             // Execute the user's script with the correct parameter order
             const result = this.scriptEditor.executeScript(signalPrices, executionPrices, this.params);
             
-            console.log(`[Muuned] Custom script generated ${result.signalCount} signals from ${result.length} candles`);
+            // console.log(`[Muuned] Custom script generated ${result.signalCount} signals from ${result.length} candles`);
             
             return result;
             

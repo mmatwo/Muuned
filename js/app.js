@@ -6,7 +6,7 @@ class MuunedApp {
     constructor() {
         this.binanceAPI = new BinanceAPI();
         this.dataManager = new DataManager();
-        this.scriptEditor = new ScriptEditor('script-editor');
+        this.scriptEditor = new ScriptEditor('script-editor'); // Back to original class name
         this.parameterForm = new ParameterForm();
         this.progressBar = null;
         this.resultsDisplay = null;
@@ -14,7 +14,8 @@ class MuunedApp {
         
         this.currentData = null;
         this.isRunning = false;
-        
+        this.marketDataCache = new Map(); // Add market data cache
+
         this.initializeApp();
     }
 
@@ -149,15 +150,18 @@ class MuunedApp {
             this.isRunning = true;
             this.updateRunButtonState();
             
+            // Reset trade cache and button states from previous backtests
+            this.resultsDisplay.resetTradeCache();
+
             // Validate inputs
             if (!this.parameterForm.validateAll()) {
                 throw new Error('Please fix parameter validation errors before running');
             }
             
-            // Get configuration
+            // Get configuration 
             const marketConfig = this.parameterForm.getMarketDataConfig();
             const strategyParams = this.parameterForm.getStrategyParameters();
-            
+
             console.log('📊 Starting optimized backtest with config:', { marketConfig, strategyParams });
             
             // Step 1: Load and process market data (with pre-calculated arrays)
@@ -168,8 +172,8 @@ class MuunedApp {
             console.log(`🔄 Testing ${parameterSets.length} parameter combinations`);
             
             // Step 3: Run optimized backtests
-            const results = await this.runParallelBacktests(parameterSets);
-            
+            const results = await this.runParallelBacktests(parameterSets, marketConfig);
+
             // Step 4: Display results
             this.resultsDisplay.displayResults(results);
             
@@ -190,11 +194,32 @@ class MuunedApp {
     }
 
     /**
-     * Load market data from Binance and process it
+     * Generate cache key for market data
      */
+    generateMarketDataCacheKey(config) {
+        return `${config.symbol}-${config.interval}-${config.startDate}-${config.endDate}`;
+    }
+    
     async loadMarketData(config) {
         console.log('📥 Loading market data...');
         
+        // Generate cache key
+        const cacheKey = this.generateMarketDataCacheKey(config);
+        
+        // Check if data is already cached
+        if (this.marketDataCache.has(cacheKey)) {
+            console.log('✅ Using cached market data');
+            this.currentData = this.marketDataCache.get(cacheKey);
+            
+            // Update data status
+            const statusElement = document.getElementById('data-status');
+            const candleCount = this.currentData.metadata.length;
+            statusElement.innerHTML = `<span class="status-ready">✅ ${candleCount} candles (cached)</span>`;
+            
+            return this.currentData;
+        }
+        
+        // Data not cached, fetch from API
         this.progressBar.show();
         this.progressBar.updateProgress(0, 'Loading market data...');
         
@@ -217,7 +242,9 @@ class MuunedApp {
         this.dataManager.setSymbol(config.symbol);
         this.currentData = this.dataManager.processMarketData(rawData);
         
-        console.log(`✅ Loaded and processed ${rawData.length} candles`);
+        // Cache the processed data
+        this.marketDataCache.set(cacheKey, this.currentData);
+        console.log(`✅ Loaded, processed, and cached ${rawData.length} candles`);
         
         // Update data status
         const statusElement = document.getElementById('data-status');
@@ -261,15 +288,16 @@ class MuunedApp {
     /**
      * Run backtests using the optimized batch engine
      */
-    async runParallelBacktests(parameterSets) {
+    async runParallelBacktests(parameterSets, marketConfig) {
         console.log(`🔄 Starting optimized backtesting for ${parameterSets.length} combinations`);
         
         this.progressBar.updateProgress(0.3, 'Starting backtests...');
         
-        // Use the optimized batch engine with performance monitoring
+        // Use the optimized batch engine with market config
         const results = await this.backtester.runBatch(
-            this.currentData,  // This is now processed data with pre-calculated arrays
+            this.currentData,
             parameterSets,
+            marketConfig, // Pass market config
             (progress, completed, total) => {
                 const overallProgress = 0.3 + (0.7 * progress);
                 this.progressBar.updateProgress(
@@ -332,6 +360,12 @@ class MuunedApp {
             dataLength: this.currentData ? this.currentData.metadata.length : 0,
             apiConnected: true // Will be updated by connectivity check
         };
+    }
+    
+    // Add method to clear cache if needed
+    clearMarketDataCache() {
+        this.marketDataCache.clear();
+        console.log('[Muuned] Market data cache cleared');
     }
 }
 

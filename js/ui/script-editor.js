@@ -1,18 +1,21 @@
 /**
- * Script Editor Component
- * Allows users to write custom strategy scripts
+ * Script Editor Component with CodeMirror Integration
+ * Professional code editor with syntax highlighting, validation, and autocomplete
  */
 class ScriptEditor {
     constructor(containerId) {
         this.container = document.getElementById(containerId);
         this.currentScript = this.getDefaultScript();
-        this.isExpanded = false;
+        this.isExpanded = true;
+        this.editor = null;
+        this.codeValidator = new CodeValidator();
+        this.validationEnabled = true;
         
         this.initializeEditor();
     }
 
     /**
-     * Initialize the script editor UI
+     * Initialize the script editor UI with CodeMirror
      */
     initializeEditor() {
         this.container.innerHTML = `
@@ -27,25 +30,277 @@ class ScriptEditor {
             <div class="script-editor-content ${this.isExpanded ? 'expanded' : 'collapsed'}">
                 <div class="editor-info">
                     <p>Write JavaScript code to generate trading signals. Your script should return an array of signals (-1=sell, 0=hold, 1=buy).</p>
-                    <p><strong>Available:</strong> <code>TechnicalIndicators</code> class, <code>signalPrices</code>, <code>executionPrices</code>, <code>params</code> object</p>
+                    <p><strong>Available:</strong> <code>TechnicalIndicators</code> class with 70+ Pine Script functions, <code>signalPrices</code>, <code>executionPrices</code>, <code>params</code> object</p>
                 </div>
                 
                 <div class="editor-wrapper">
-                    <textarea 
-                        id="strategy-script" 
-                        class="script-textarea"
-                        spellcheck="false"
-                        placeholder="Write your strategy script here..."
-                    >${this.currentScript}</textarea>
+                    <div id="codemirror-container" class="codemirror-container"></div>
                 </div>
                 
                 <div class="editor-status" id="script-status">
                     <span class="status-ready">✅ Script Ready</span>
                 </div>
+                
+                <div id="validation-issues" class="validation-issues" style="display: none;"></div>
             </div>
         `;
         
+        this.initializeCodeMirror();
         this.attachEventListeners();
+    }
+
+    /**
+     * Initialize CodeMirror editor
+     */
+    initializeCodeMirror() {
+        const container = document.getElementById('codemirror-container');
+        
+        // Check if CodeMirror is available
+        if (typeof CodeMirror === 'undefined') {
+            console.error('CodeMirror is not loaded. Falling back to textarea.');
+            this.createFallbackEditor(container);
+            return;
+        }
+        
+        // CodeMirror configuration
+        this.editor = CodeMirror(container, {
+            value: this.currentScript,
+            mode: 'javascript',
+            theme: 'material',
+            lineNumbers: true,
+            lineWrapping: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            foldGutter: true,
+            gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+            extraKeys: {
+                'Ctrl-Space': 'autocomplete',
+                'Ctrl-/': 'toggleComment',
+                'Ctrl-Alt-F': () => this.formatCode(),
+                'F11': () => this.toggleFullscreen(),
+                'Esc': () => this.exitFullscreen()
+            },
+            hintOptions: {
+                hint: this.customHint.bind(this),
+                completeSingle: false
+            }
+        });
+
+        // Set up event listeners
+        this.editor.on('change', () => {
+            this.currentScript = this.editor.getValue();
+            this.validateScript();
+            
+            // Notify parameter form of script changes
+            if (this.onScriptChange) {
+                this.onScriptChange(this.currentScript);
+            }
+        });
+
+        // Auto-resize editor
+        this.editor.on('changes', () => {
+            this.autoResizeEditor();
+        });
+
+        // Initial validation
+        this.validateScript();
+    }
+
+    /**
+     * Create fallback textarea editor if CodeMirror fails to load
+     */
+    createFallbackEditor(container) {
+        console.warn('Using fallback textarea editor');
+        
+        container.innerHTML = `
+            <textarea 
+                id="fallback-editor" 
+                class="script-textarea"
+                spellcheck="false"
+                placeholder="Write your strategy script here..."
+                style="width: 100%; min-height: 400px; font-family: monospace; font-size: 14px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px;"
+            >${this.currentScript}</textarea>
+        `;
+        
+        const textarea = document.getElementById('fallback-editor');
+        
+        // Set up event listeners for fallback
+        textarea.addEventListener('input', () => {
+            this.currentScript = textarea.value;
+            this.validateScript();
+            
+            if (this.onScriptChange) {
+                this.onScriptChange(this.currentScript);
+            }
+        });
+        
+        // Create a simple API to match CodeMirror
+        this.editor = {
+            getValue: () => textarea.value,
+            setValue: (value) => {
+                textarea.value = value;
+                this.currentScript = value;
+            },
+            refresh: () => {}, // No-op for textarea
+            getWrapperElement: () => textarea
+        };
+    }
+
+    /**
+     * Custom autocomplete hints for TechnicalIndicators
+     */
+    customHint(cm, options) {
+        const cursor = cm.getCursor();
+        const token = cm.getTokenAt(cursor);
+        const word = token.string;
+        
+        // TechnicalIndicators autocomplete
+        const technicalIndicators = [
+            'sma', 'ema', 'wma', 'vwma', 'swma', 'alma', 'hma',
+            'rsi', 'stoch', 'stochrsi', 'cci', 'mfi', 'williamsR',
+            'macd', 'adx', 'psar', 'atr', 'tr', 'bb', 'kc',
+            'obv', 'ad', 'mom', 'roc', 'crossover', 'crossunder',
+            'highest', 'lowest', 'rising', 'falling', 'change',
+            'nz', 'na', 'fixnan', 'abs', 'sign', 'round', 'floor',
+            'ceil', 'max', 'min', 'pow', 'sqrt', 'log', 'avg', 'sum',
+            'ohlc4', 'hlc3', 'hl2', 'rollingStd', 'smooth'
+        ];
+        
+        // Parameter suggestions
+        const commonParams = [
+            'emaFloor', 'emaCeiling', 'volFloor', 'volCeiling',
+            'smoothLength', 'forceBuyThreshold', 'voltScale',
+            'positionSize', 'volatilityWindow', 'rsiPeriod',
+            'fastMA', 'slowMA', 'rsiOverbought', 'rsiOversold'
+        ];
+        
+        let suggestions = [];
+        
+        // Check context for appropriate suggestions
+        const lineText = cm.getLine(cursor.line);
+        
+        if (lineText.includes('TechnicalIndicators.')) {
+            suggestions = technicalIndicators
+                .filter(indicator => indicator.toLowerCase().includes(word.toLowerCase()))
+                .map(indicator => ({
+                    text: indicator,
+                    displayText: `${indicator}()`,
+                    className: 'hint-indicator'
+                }));
+        } else if (lineText.includes('params.')) {
+            suggestions = commonParams
+                .filter(param => param.toLowerCase().includes(word.toLowerCase()))
+                .map(param => ({
+                    text: param,
+                    displayText: param,
+                    className: 'hint-param'
+                }));
+        } else {
+            // General JavaScript suggestions
+            const jsKeywords = ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while'];
+            suggestions = jsKeywords
+                .filter(keyword => keyword.toLowerCase().includes(word.toLowerCase()))
+                .map(keyword => ({
+                    text: keyword,
+                    displayText: keyword,
+                    className: 'hint-keyword'
+                }));
+        }
+        
+        return {
+            list: suggestions,
+            from: CodeMirror.Pos(cursor.line, token.start),
+            to: CodeMirror.Pos(cursor.line, token.end)
+        };
+    }
+
+    /**
+     * Auto-resize editor based on content
+     */
+    autoResizeEditor() {
+        const minHeight = 400;
+        const maxHeight = 600;
+        const lineHeight = this.editor.defaultTextHeight();
+        const lineCount = this.editor.lineCount();
+        const desiredHeight = Math.max(minHeight, Math.min(maxHeight, lineCount * lineHeight + 40));
+        
+        this.editor.setSize(null, desiredHeight);
+    }
+
+    /**
+     * Format code using basic JavaScript formatting
+     */
+    formatCode() {
+        try {
+            const code = this.editor.getValue();
+            // Basic formatting - add proper indentation
+            const formatted = this.basicJSFormat(code);
+            this.editor.setValue(formatted);
+            
+            this.showTemporaryMessage('Code formatted!');
+        } catch (error) {
+            this.showTemporaryMessage('Format failed: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Basic JavaScript code formatting
+     */
+    basicJSFormat(code) {
+        let formatted = '';
+        let indentLevel = 0;
+        const indent = '    '; // 4 spaces
+        
+        const lines = code.split('\n');
+        
+        for (let line of lines) {
+            const trimmed = line.trim();
+            
+            if (trimmed === '') {
+                formatted += '\n';
+                continue;
+            }
+            
+            // Decrease indent for closing brackets
+            if (trimmed.match(/^[\}\]\)]/)) {
+                indentLevel = Math.max(0, indentLevel - 1);
+            }
+            
+            // Add indentation
+            formatted += indent.repeat(indentLevel) + trimmed + '\n';
+            
+            // Increase indent for opening brackets
+            if (trimmed.match(/[\{\[\(]$/)) {
+                indentLevel++;
+            }
+        }
+        
+        return formatted.trim();
+    }
+
+    /**
+     * Toggle fullscreen mode
+     */
+    toggleFullscreen() {
+        const wrapper = this.editor.getWrapperElement();
+        if (wrapper.classList.contains('CodeMirror-fullscreen')) {
+            this.exitFullscreen();
+        } else {
+            wrapper.classList.add('CodeMirror-fullscreen');
+            this.editor.refresh();
+        }
+    }
+
+    /**
+     * Exit fullscreen mode
+     */
+    exitFullscreen() {
+        const wrapper = this.editor.getWrapperElement();
+        wrapper.classList.remove('CodeMirror-fullscreen');
+        this.editor.refresh();
     }
 
     /**
@@ -61,30 +316,64 @@ class ScriptEditor {
         document.getElementById('reset-script').addEventListener('click', () => {
             this.resetScript();
         });
+    }
+
+    /**
+     * Toggle validation
+     */
+    toggleValidation(button) {
+        this.validationEnabled = !this.validationEnabled;
+        button.textContent = `Validation: ${this.validationEnabled ? 'ON' : 'OFF'}`;
         
-        // Script content changes
-        const textarea = document.getElementById('strategy-script');
-        textarea.addEventListener('input', () => {
-            this.currentScript = textarea.value;
-            this.validateScript();
-            
-            // Notify parameter form of script changes
-            if (this.onScriptChange) {
-                this.onScriptChange(this.currentScript);
-            }
-        });
+        if (!this.validationEnabled) {
+            this.clearValidationErrors();
+        } else {
+            this.validateAndShowErrors();
+        }
+    }
+
+    /**
+     * Validate code and show errors
+     */
+    validateAndShowErrors() {
+        if (!this.validationEnabled) return;
         
-        // Auto-resize textarea
-        textarea.addEventListener('input', () => {
-            this.autoResizeTextarea(textarea);
-        });
+        const code = this.getCurrentScript();
+        const issues = this.codeValidator.validateCode(code);
         
-        // Initial resize and analysis
-        this.autoResizeTextarea(textarea);
+        this.displayValidationIssues(issues);
+    }
+
+    /**
+     * Display validation issues
+     */
+    displayValidationIssues(issues) {
+        const statusElement = document.getElementById('validation-issues');
         
-        // Trigger initial parameter analysis
-        if (this.onScriptChange) {
-            this.onScriptChange(this.currentScript);
+        if (issues.length === 0) {
+            statusElement.innerHTML = '';
+            statusElement.style.display = 'none';
+            return;
+        }
+        
+        statusElement.style.display = 'block';
+        statusElement.innerHTML = issues.map(issue => `
+            <div class="validation-issue ${issue.severity}">
+                <span class="issue-severity">${issue.severity.toUpperCase()}</span>
+                <span class="issue-message">${issue.message}</span>
+                ${issue.line ? `<span class="issue-line">Line ${issue.line}</span>` : ''}
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Clear validation errors
+     */
+    clearValidationErrors() {
+        const statusElement = document.getElementById('validation-issues');
+        if (statusElement) {
+            statusElement.innerHTML = '';
+            statusElement.style.display = 'none';
         }
     }
 
@@ -105,14 +394,12 @@ class ScriptEditor {
             content.classList.add('collapsed');
             toggleBtn.textContent = 'Expand';
         }
-    }
-
-    /**
-     * Set callback for script changes
-     * @param {Function} callback - Function to call when script changes
-     */
-    onScriptChange(callback) {
-        this.onScriptChange = callback;
+        
+        // Refresh CodeMirror after DOM changes
+        setTimeout(() => {
+            this.editor.refresh();
+            this.autoResizeEditor();
+        }, 100);
     }
 
     /**
@@ -121,9 +408,8 @@ class ScriptEditor {
     resetScript() {
         if (confirm('Reset script to default? This will lose your current changes.')) {
             this.currentScript = this.getDefaultScript();
-            document.getElementById('strategy-script').value = this.currentScript;
+            this.editor.setValue(this.currentScript);
             this.validateScript();
-            this.autoResizeTextarea(document.getElementById('strategy-script'));
             
             // Notify of script change
             if (this.onScriptChange) {
@@ -133,23 +419,20 @@ class ScriptEditor {
     }
 
     /**
-     * Auto-resize textarea to fit content
-     */
-    autoResizeTextarea(textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = Math.max(200, textarea.scrollHeight) + 'px';
-    }
-
-    /**
      * Basic script validation
      */
     validateScript() {
         const statusElement = document.getElementById('script-status');
         
         try {
-            // Basic syntax check - try to create function
+            // Basic syntax check
             new Function('signalPrices', 'executionPrices', 'params', 'TechnicalIndicators', this.currentScript);
             statusElement.innerHTML = '<span class="status-ready">✅ Script Syntax OK</span>';
+            
+            if (this.validationEnabled) {
+                this.validateAndShowErrors();
+            }
+            
             return true;
         } catch (error) {
             statusElement.innerHTML = `<span class="status-loading">❌ Syntax Error: ${error.message}</span>`;
@@ -158,31 +441,33 @@ class ScriptEditor {
     }
 
     /**
+     * Show temporary message
+     */
+    showTemporaryMessage(message, type = 'success') {
+        const statusElement = document.getElementById('script-status');
+        const originalContent = statusElement.innerHTML;
+        const className = type === 'error' ? 'status-loading' : 'status-ready';
+        const icon = type === 'error' ? '❌' : '✅';
+        
+        statusElement.innerHTML = `<span class="${className}">${icon} ${message}</span>`;
+        
+        setTimeout(() => {
+            statusElement.innerHTML = originalContent;
+        }, 2000);
+    }
+
+    /**
      * Execute the user's script
-     * @param {Array} signalPrices - OHLC4 price array
-     * @param {Array} executionPrices - Close price array
-     * @param {Object} params - Strategy parameters
-     * @returns {Object} Result with signals array
      */
     executeScript(signalPrices, executionPrices, params) {
         try {
-            // Debug logging to see what we're actually getting
-            console.log('[Muuned] Script execution debug:');
-            console.log('signalPrices type:', typeof signalPrices);
-            console.log('signalPrices isArray:', Array.isArray(signalPrices));
-            console.log('signalPrices length:', signalPrices ? signalPrices.length : 'undefined');
-            console.log('executionPrices type:', typeof executionPrices);
-            console.log('executionPrices isArray:', Array.isArray(executionPrices));
-            console.log('executionPrices length:', executionPrices ? executionPrices.length : 'undefined');
-            console.log('params:', params);
-            
             // Validate inputs
             if (!Array.isArray(signalPrices)) {
-                throw new Error(`signalPrices is not an array. Type: ${typeof signalPrices}, Value: ${signalPrices}`);
+                throw new Error(`signalPrices is not an array. Type: ${typeof signalPrices}`);
             }
             
             if (!Array.isArray(executionPrices)) {
-                throw new Error(`executionPrices is not an array. Type: ${typeof executionPrices}, Value: ${executionPrices}`);
+                throw new Error(`executionPrices is not an array. Type: ${typeof executionPrices}`);
             }
             
             // Create a sandboxed function with the user's script
@@ -228,21 +513,20 @@ class ScriptEditor {
 
     /**
      * Get the current script content
-     * @returns {string} Current script
      */
     getCurrentScript() {
-        return this.currentScript;
+        return this.editor ? this.editor.getValue() : this.currentScript;
     }
 
     /**
      * Set script content
-     * @param {string} script - New script content
      */
     setScript(script) {
         this.currentScript = script;
-        document.getElementById('strategy-script').value = script;
+        if (this.editor) {
+            this.editor.setValue(script);
+        }
         this.validateScript();
-        this.autoResizeTextarea(document.getElementById('strategy-script'));
         
         // Notify of script change
         if (this.onScriptChange) {
@@ -252,10 +536,9 @@ class ScriptEditor {
 
     /**
      * Get default EMA Differential strategy script
-     * @returns {string} Default script
      */
     getDefaultScript() {
-        return `// EMA Differential Strategy
+        return `// EMA Differential Strategy with Pine Script Functions
 // Generate trading signals based on volatility-adaptive EMA
 
 // Calculate rolling volatility
@@ -271,7 +554,7 @@ const volatilityPct = volatility.map((vol, i) => {
 
 // Calculate dynamic EMA lengths based on volatility
 const emaLengths = volatilityPct.map(volPct => {
-    if (isNaN(volPct) || volPct === null || volPct === undefined) {
+    if (TechnicalIndicators.na(volPct)) {
         return params.emaCeiling;
     }
     if (volPct <= params.volFloor) {
@@ -287,19 +570,19 @@ const emaLengths = volatilityPct.map(volPct => {
     const adjustedPosition = 1 - volPosition;
     const emaLength = params.emaFloor + (adjustedPosition * emaRange);
     
-    return Math.round(emaLength);
+    return TechnicalIndicators.round(emaLength);
 });
 
 // Calculate dynamic EMAs
 const ema = [];
-const maxPeriod = Math.max(...emaLengths.filter(p => !isNaN(p)));
+const maxPeriod = TechnicalIndicators.max(...emaLengths.filter(p => !TechnicalIndicators.na(p)));
 let baseEma = TechnicalIndicators.ema(signalPrices, maxPeriod);
 
 for (let i = 0; i < signalPrices.length; i++) {
     const period = emaLengths[i];
     
     if (period && i >= (params.volatilityWindow || 20) && i >= period - 1) {
-        const startIdx = Math.max(0, i - period + 1);
+        const startIdx = TechnicalIndicators.max(0, i - period + 1);
         const priceSlice = signalPrices.slice(startIdx, i + 1);
         
         if (priceSlice.length >= period) {
@@ -321,14 +604,14 @@ const rawDiff = signalPrices.map((price, i) => {
     return undefined;
 });
 
-// Smooth the differential
-const validRawDiff = rawDiff.filter(val => val !== undefined);
-const smoothedValid = TechnicalIndicators.smooth(validRawDiff, params.smoothLength || 3);
+// Smooth the differential using Pine Script style
+const validRawDiff = rawDiff.filter(val => !TechnicalIndicators.na(val));
+const smoothedValid = TechnicalIndicators.ema(validRawDiff, params.smoothLength || 3);
 
 // Map smoothed values back to original array positions
 let smoothIndex = 0;
 const smoothDiff = rawDiff.map(val => {
-    if (val !== undefined) {
+    if (!TechnicalIndicators.na(val)) {
         return smoothedValid[smoothIndex++];
     }
     return undefined;
@@ -336,7 +619,7 @@ const smoothDiff = rawDiff.map(val => {
 
 // Generate trading signals
 const signals = smoothDiff.map(smoothDiff => {
-    if (smoothDiff === undefined) return 0;
+    if (TechnicalIndicators.na(smoothDiff)) return 0;
     
     if (smoothDiff > 0 || smoothDiff <= (params.forceBuyThreshold || -5.0)) {
         return 1; // Buy signal
@@ -351,79 +634,41 @@ return signals;`;
     }
 
     /**
-     * Get a simple example script for reference
-     * @returns {string} Example script
+     * Set callback for script changes
      */
-    getExampleScript() {
-        return `// Simple Moving Average Crossover Strategy
-// Buy when fast MA crosses above slow MA, sell when it crosses below
-
-const fastPeriod = params.fastMA || 10;
-const slowPeriod = params.slowMA || 30;
-
-// Calculate moving averages
-const fastMA = TechnicalIndicators.ema(signalPrices, fastPeriod);
-const slowMA = TechnicalIndicators.ema(signalPrices, slowPeriod);
-
-// Generate signals based on crossovers
-const signals = [];
-for (let i = 0; i < signalPrices.length; i++) {
-    if (i === 0 || !fastMA[i] || !slowMA[i] || !fastMA[i-1] || !slowMA[i-1]) {
-        signals[i] = 0; // No signal
-    } else if (fastMA[i-1] <= slowMA[i-1] && fastMA[i] > slowMA[i]) {
-        signals[i] = 1; // Buy signal (fast MA crosses above slow MA)
-    } else if (fastMA[i-1] >= slowMA[i-1] && fastMA[i] < slowMA[i]) {
-        signals[i] = -1; // Sell signal (fast MA crosses below slow MA)
-    } else {
-        signals[i] = 0; // Hold
+    onScriptChange(callback) {
+        this.onScriptChange = callback;
     }
 }
 
-return signals;`;
-    }
+// // Initialize application when DOM and dependencies are ready
+// function initializeMuunedApp() {
+//     console.log('🌟 Starting Muuned Application...');
+    
+//     // Check if required dependencies are loaded
+//     const missing = [];
+//     if (typeof TechnicalIndicators === 'undefined') missing.push('TechnicalIndicators');
+    
+//     if (missing.length > 0) {
+//         console.warn('Missing dependencies:', missing);
+//         // Show error message to user
+//         document.body.innerHTML = `
+//             <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+//                 <h2>⚠️ Loading Error</h2>
+//                 <p>Missing required dependencies: ${missing.join(', ')}</p>
+//                 <p>Please refresh the page and ensure all scripts are loaded.</p>
+//             </div>
+//         `;
+//         return;
+//     }
+    
+//     // Initialize app
+//     try {
+//         window.muunedApp = new MuunedApp();
+//     } catch (error) {
+//         console.error('Failed to initialize Muuned app:', error);
+//     }
+// }
 
-    /**
-     * Show example scripts menu
-     */
-    showExamples() {
-        const examples = [
-            { name: 'EMA Differential (Default)', script: this.getDefaultScript() },
-            { name: 'Simple MA Crossover', script: this.getExampleScript() }
-        ];
-        
-        // This could be expanded with a dropdown or modal
-        console.log('Available examples:', examples.map(e => e.name));
-    }
-
-    /**
-     * Validate that script is safe to execute
-     * @param {string} script - Script to validate
-     * @returns {Object} Validation result
-     */
-    validateScriptSafety(script) {
-        // Basic safety checks
-        const dangerousPatterns = [
-            /document\./,
-            /window\./,
-            /eval\(/,
-            /Function\(/,
-            /setTimeout/,
-            /setInterval/,
-            /XMLHttpRequest/,
-            /fetch\(/,
-            /import\s/,
-            /require\(/
-        ];
-        
-        for (const pattern of dangerousPatterns) {
-            if (pattern.test(script)) {
-                return {
-                    isSafe: false,
-                    error: `Potentially unsafe code detected: ${pattern.source}`
-                };
-            }
-        }
-        
-        return { isSafe: true };
-    }
-}
+// // Wait for DOM and try to initialize
+// document.addEventListener('DOMContentLoaded', initializeMuunedApp);

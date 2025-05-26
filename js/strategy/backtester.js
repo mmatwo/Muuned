@@ -3,20 +3,27 @@
 * Handles portfolio management, trade execution, and performance metrics
 */
 class PortfolioBacktester {
-constructor(options = {}) {
-    this.initialCoins = options.initialCoins || 1.0;
-    this.positionSize = options.positionSize || 1.0;
-    this.feesAndSlippage = options.feesAndSlippage || 0.001; // 0.1% default
-    
-    this.reset();
-}
+    constructor(options = {}) {
+        this.startingDenomination = options.startingDenomination || 'usdt';
+        this.startingAmount = options.startingAmount || 10000;
+        this.positionSize = options.positionSize || 1.0;
+        this.feesAndSlippage = options.feesAndSlippage || 0.001;
+        
+        this.reset();
+    }
 
 /**
  * Reset backtester to initial state
  */
 reset() {
-    this.coinBalance = this.initialCoins;
-    this.usdtBalance = 0.0;
+    if (this.startingDenomination === 'coin') {
+        this.coinBalance = this.startingAmount;
+        this.usdtBalance = 0.0;
+    } else {
+        this.coinBalance = 0.0;
+        this.usdtBalance = this.startingAmount;
+    }
+    
     this.trades = [];
     this.portfolioValues = [];
     this.totalFeesPaid = 0.0;
@@ -108,7 +115,14 @@ run(candleData, signals) {
         throw new Error('Invalid input data: candle data and signals must have same length');
     }
 
-    const startValue = this.initialCoins * candleData[0].close;
+    // Calculate starting value based on denomination
+    let startValue;
+    if (this.startingDenomination === 'coin') {
+        startValue = this.startingAmount * candleData[0].close;
+    } else {
+        startValue = this.startingAmount;
+    }
+
     let tradeCount = 0;
     const trades = []; // Keep minimal trade data for win/loss calculation
 
@@ -155,10 +169,10 @@ calculateLightweightMetrics(candleData, trades, startValue) {
     const maxDrawdown = this.calculateMaxDrawdown(this.portfolioValues);
     
     const metrics = {
-        // Essential portfolio metrics
+        // Essential portfolio metrics - FIXED calculation
         initialValue: startValue,
         finalValue: finalValue,
-        totalReturn: ((finalValue / startValue) - 1) * 100,
+        totalReturn: startValue > 0 ? ((finalValue - startValue) / startValue) * 100 : 0,
         
         // Trade metrics
         totalTrades: trades.length,
@@ -316,8 +330,8 @@ exportToCsv() {
 static validateConfig(config) {
     const errors = [];
     
-    if (!config.initialCoins || config.initialCoins <= 0) {
-        errors.push('Initial coins must be positive');
+    if (!config.startingAmount || config.startingAmount <= 0) {
+        errors.push('Starting amount must be positive');
     }
     
     if (config.positionSize <= 0 || config.positionSize > 1) {
@@ -348,44 +362,31 @@ constructor() {
 /**
  * Run single backtest (updated interface for custom scripts)
  */
-async runSingle(processedData, params) {
+async runSingle(processedData, params, marketConfig) {
     try {
-        console.log('[Muuned] BacktestEngine.runSingle called with:');
-        console.log('processedData structure:', {
-            hasCandles: !!processedData.candles,
-            candlesLength: processedData.candles ? processedData.candles.length : 0,
-            hasPrices: !!processedData.prices,
-            pricesStructure: processedData.prices ? Object.keys(processedData.prices) : 'none',
-            ohlc4Type: processedData.prices && processedData.prices.ohlc4 ? typeof processedData.prices.ohlc4 : 'undefined',
-            ohlc4IsArray: processedData.prices && processedData.prices.ohlc4 ? Array.isArray(processedData.prices.ohlc4) : false,
-            ohlc4Length: processedData.prices && processedData.prices.ohlc4 ? processedData.prices.ohlc4.length : 0,
-            closeType: processedData.prices && processedData.prices.close ? typeof processedData.prices.close : 'undefined',
-            closeIsArray: processedData.prices && processedData.prices.close ? Array.isArray(processedData.prices.close) : false,
-            closeLength: processedData.prices && processedData.prices.close ? processedData.prices.close.length : 0
-        });
-        console.log('params:', params);
+        console.log('[Muuned] BacktestEngine.runSingle called with market config:', marketConfig);
         
         // Create custom strategy that uses the script editor
         const strategy = new CustomScriptStrategy(window.muunedApp.scriptEditor, params);
         const signalData = strategy.calculateSignals(
-            processedData.prices.ohlc4,  // Use pre-calculated OHLC4
-            processedData.prices.close   // Use pre-calculated close prices
+            processedData.prices.ohlc4,
+            processedData.prices.close
         );
         
-        // Run backtest with lightweight result
+        // Run backtest with market configuration
         const backtester = new PortfolioBacktester({
-            initialCoins: 1.0,
+            startingDenomination: marketConfig.startingDenomination,
+            startingAmount: marketConfig.startingAmount,
             positionSize: params.positionSize,
             feesAndSlippage: params.feesSlippage
         });
         
         const metrics = backtester.run(processedData.candles, signalData.signals);
         
-        // Return lightweight result - no trade history or signal arrays
         return {
             parameters: params,
             ...metrics,
-            signalCount: signalData.signalCount  // Just the count, not the full array
+            signalCount: signalData.signalCount
         };
         
     } catch (error) {
@@ -397,7 +398,7 @@ async runSingle(processedData, params) {
 /**
  * Run batch with performance monitoring and memory management
  */
-async runBatch(processedData, parameterSets, onProgress = null) {
+async runBatch(processedData, parameterSets, marketConfig, onProgress = null) {
     this.isRunning = true;
     this.results = [];
     
@@ -419,7 +420,7 @@ async runBatch(processedData, parameterSets, onProgress = null) {
             const batchResults = [];
             for (const params of batch) {
                 try {
-                    const result = await this.runSingle(processedData, params);
+                    const result = await this.runSingle(processedData, params, marketConfig);
                     batchResults.push(result);
                 } catch (error) {
                     console.error(`[Muuned] Error in backtest:`, error);

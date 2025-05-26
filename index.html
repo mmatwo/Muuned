@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Muuned - Strategy Backtester</title>
     <link rel="stylesheet" href="css/styles.css">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldgutter.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/material.min.css">
 </head>
 <body>
     <div class="container">
@@ -57,6 +62,19 @@
             </div>
         </div>
     </div>
+    
+    <!-- CodeMirror -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/javascript-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/brace-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/comment/comment.min.js"></script>
+
 
     <!-- Core Application Scripts -->
     <script src="js/utils/math-utils.js"></script>
@@ -69,17 +87,19 @@
     <script src="js/data/data-manager.js"></script>
     
     <!-- UI Components -->
+    <script src="js/ui/syntax-highlighting.js"></script>
     <script src="js/ui/script-editor.js"></script>
     <script src="js/ui/parameter-form.js"></script>
     <script src="js/ui/progress-bar.js"></script>
-    <script src="js/ui/results-display.js"></script>
-    
+
     <!-- Strategy Engine -->
     <script src="js/strategy/indicators.js"></script>
     <script src="js/strategy/custom-strategy.js"></script>
     <script src="js/strategy/strategy.js"></script>
     <script src="js/strategy/backtester.js"></script>
-    
+    <script src="js/strategy/detailed-backtester.js"></script>
+    <script src="js/ui/results-display.js"></script>
+
     <!-- Main Application Controller -->
     <script src="js/app.js"></script>
 </body>

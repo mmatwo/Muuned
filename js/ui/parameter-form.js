@@ -51,7 +51,7 @@ class ParameterForm {
     }
 
     /**
-     * Create dynamic parameter form based on discovered parameters
+     * Create dynamic parameter form based on discovered parameters (simplified)
      */
     createDynamicParametersForm(discovery) {
         if (discovery.parameters.length === 0) {
@@ -64,39 +64,34 @@ class ParameterForm {
             return;
         }
 
-        const formConfig = this.parameterParser.generateFormConfig(discovery.parameters);
-        let html = '';
-
-        // Add info about discovered parameters
-        html += `
+        let html = `
             <div class="parameters-info">
-                <p>📋 Found <strong>${discovery.totalParameters}</strong> parameters in your script</p>
-                ${discovery.unknownCount > 0 ? 
-                    `<p class="warning">⚠️ ${discovery.unknownCount} unknown parameters detected - using default settings</p>` : 
-                    ''}
+                <p>⚙️ <strong>Strategy Parameters</strong> - Found ${discovery.totalCount} parameters in your script</p>
             </div>
+            
+            <div class="param-grid">
         `;
-
-        // Generate form sections by category
-        for (const [category, parameters] of Object.entries(formConfig.categories)) {
+        
+        // Generate form fields for all parameters under one heading
+        for (const param of discovery.parameters) {
             html += `
-                <div class="parameter-category">
-                    <h4 class="category-title">${category} Parameters</h4>
-                    <div class="param-grid">
-            `;
-            
-            for (const param of parameters) {
-                html += this.createParameterField(param);
-            }
-            
-            html += `
-                    </div>
+                <div class="form-group">
+                    <label for="${param.name}">${param.label}</label>
+                    <input 
+                        type="text" 
+                        id="${param.name}" 
+                        value="${param.defaultValue}" 
+                        placeholder="${param.defaultValue}"
+                        data-param-name="${param.name}"
+                        data-param-type="array"
+                    >
                 </div>
             `;
         }
-
-        // Add advanced parameters section
+        
         html += `
+            </div>
+            
             <div class="advanced-params" style="display: none;">
                 <h3>Advanced Parameters</h3>
                 <div class="param-grid">
@@ -161,7 +156,7 @@ class ParameterForm {
     }
 
     /**
-     * Create market data configuration form
+     * Create market data configuration form - UPDATED with starting capital controls
      */
     createMarketDataForm() {
         this.marketDataContainer.innerHTML = `
@@ -196,6 +191,21 @@ class ParameterForm {
             <div class="form-group">
                 <label for="endDate">End Date</label>
                 <input type="date" id="endDate" value="${this.getDefaultEndDate()}">
+            </div>
+            
+            <div class="param-grid">
+                <div class="form-group">
+                    <label for="startingDenomination">Starting Denomination</label>
+                    <select id="startingDenomination">
+                        <option value="coin">Start with Coin</option>
+                        <option value="usdt" selected>Start with USDT</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="startingAmount">Starting Amount</label>
+                    <input type="number" id="startingAmount" value="10000" min="1" step="1" placeholder="10000">
+                </div>
             </div>
         `;
     }
@@ -225,52 +235,40 @@ class ParameterForm {
     }
 
     /**
-     * Create market data configuration form
-     */
-    createMarketDataForm() {
-        this.marketDataContainer.innerHTML = `
-            <div class="form-group">
-                <label for="symbol">Symbol</label>
-                <select id="symbol">
-                    <option value="BTCUSDT">BTC/USDT</option>
-                    <option value="ETHUSDT">ETH/USDT</option>
-                    <option value="ADAUSDT">ADA/USDT</option>
-                    <option value="DOTUSDT">DOT/USDT</option>
-                    <option value="LINKUSDT">LINK/USDT</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="interval">Candle Size</label>
-                <select id="interval">
-                    <option value="1h">1 Hour</option>
-                    <option value="2h" selected>2 Hours</option>
-                    <option value="4h">4 Hours</option>
-                    <option value="6h">6 Hours</option>
-                    <option value="12h">12 Hours</option>
-                    <option value="1d">1 Day</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="startDate">Start Date</label>
-                <input type="date" id="startDate" value="${this.getDefaultStartDate()}">
-            </div>
-            
-            <div class="form-group">
-                <label for="endDate">End Date</label>
-                <input type="date" id="endDate" value="${this.getDefaultEndDate()}">
-            </div>
-        `;
-    }
-
-    /**
      * Attach event listeners to form elements
      */
     attachEventListeners() {
         // Market data validation
         document.getElementById('startDate').addEventListener('change', () => this.validateDateRange());
         document.getElementById('endDate').addEventListener('change', () => this.validateDateRange());
+        
+        // Starting amount validation
+        document.getElementById('startingAmount').addEventListener('input', () => this.validateStartingAmount());
+    }
+
+    /**
+     * Validate starting amount
+     */
+    validateStartingAmount() {
+        const amountInput = document.getElementById('startingAmount');
+        const amount = parseFloat(amountInput.value);
+        
+        let isValid = true;
+        let message = '';
+        
+        if (isNaN(amount) || amount <= 0) {
+            isValid = false;
+            message = 'Starting amount must be a positive number';
+        } else if (amount < 1) {
+            isValid = false;
+            message = 'Starting amount must be at least 1';
+        } else if (amount > 1000000) {
+            isValid = false; 
+            message = 'Starting amount cannot exceed 1,000,000';
+        }
+        
+        this.updateValidationStatus('startingAmount', isValid, message);
+        return isValid;
     }
 
     /**
@@ -363,6 +361,7 @@ class ParameterForm {
         
         this.updateParameterCount();
     }
+
     /**
      * Get default start date (6 months ago)
      */
@@ -546,14 +545,16 @@ class ParameterForm {
     }
 
     /**
-     * Get market data configuration
+     * Get market data configuration - UPDATED to include starting capital
      */
     getMarketDataConfig() {
         return {
             symbol: document.getElementById('symbol').value,
             interval: document.getElementById('interval').value,
             startDate: document.getElementById('startDate').value,
-            endDate: document.getElementById('endDate').value
+            endDate: document.getElementById('endDate').value,
+            startingDenomination: document.getElementById('startingDenomination').value,
+            startingAmount: parseFloat(document.getElementById('startingAmount').value) || 10000
         };
     }
 
@@ -562,13 +563,14 @@ class ParameterForm {
      */
     validateAll() {
         const dateValid = this.validateDateRange();
+        const amountValid = this.validateStartingAmount();
         
         const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
         const paramValidations = Array.from(paramInputs).map(input => 
             this.validateParameter(input.dataset.paramName)
         );
         
-        return dateValid && paramValidations.every(v => v);
+        return dateValid && amountValid && paramValidations.every(v => v);
     }
 
     /**

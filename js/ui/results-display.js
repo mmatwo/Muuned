@@ -1,6 +1,6 @@
 /**
  * Results Display Component
- * Handles visualization and presentation of backtest results
+ * Handles visualization and presentation of backtest results with trade analysis
  */
 class ResultsDisplay {
     constructor(displayContainerId, resultsContainerId) {
@@ -10,7 +10,12 @@ class ResultsDisplay {
         this.sortColumn = 'finalValue';
         this.sortDirection = 'desc';
         
+        // Trade modal functionality
+        this.tradeCache = new Map();
+        this.currentTradeModal = null;
+        
         this.initializeDisplay();
+        this.setupKeyboardListeners();
     }
 
     /**
@@ -100,6 +105,8 @@ class ResultsDisplay {
                 </div>
             </div>
         `;
+        
+        this.adjustSummaryFontSizes();
     }
 
     /**
@@ -217,31 +224,54 @@ class ResultsDisplay {
     }
 
     /**
-     * Display results table
+     * Display results table with sortable headers
      */
     displayTable(results, limit = 20) {
         const displayResults = results.slice(0, limit);
+        
+        if (displayResults.length === 0) {
+            this.tableContainer.innerHTML = '<div class="no-results"><p>No results to display</p></div>';
+            return;
+        }
+        
+        // Create sortable headers with sorting indicators
+        const getSortIcon = (column) => {
+            if (this.sortColumn === column) {
+                return this.sortDirection === 'desc' ? ' ▼' : ' ▲';
+            }
+            return '';
+        };
+        
+        const headerHtml = `
+            <tr>
+                <th>Rank</th>
+                <th class="sortable-header" data-column="finalValue">
+                    Final Value${getSortIcon('finalValue')}
+                </th>
+                <th class="sortable-header" data-column="totalReturn">
+                    Return %${getSortIcon('totalReturn')}
+                </th>
+                <th class="sortable-header" data-column="winRate">
+                    Win Rate${getSortIcon('winRate')}
+                </th>
+                <th class="sortable-header" data-column="totalTrades">
+                    Trades${getSortIcon('totalTrades')}
+                </th>
+                <th class="sortable-header" data-column="maxDrawdown">
+                    Max DD${getSortIcon('maxDrawdown')}
+                </th>
+                <th>Actions</th>
+            </tr>
+        `;
         
         this.tableContainer.innerHTML = `
             <div class="results-table">
                 <table>
                     <thead>
-                        <tr>
-                            <th>Rank</th>
-                            <th>EMA Floor</th>
-                            <th>EMA Ceiling</th>
-                            <th>Vol Floor</th>
-                            <th>Vol Ceiling</th>
-                            <th>Final Value</th>
-                            <th>Return %</th>
-                            <th>Win Rate</th>
-                            <th>Trades</th>
-                            <th>Max DD</th>
-                            <th>Actions</th>
-                        </tr>
+                        ${headerHtml}
                     </thead>
                     <tbody>
-                        ${displayResults.map((result, index) => this.createTableRow(result, index + 1)).join('')}
+                        ${displayResults.map((result, index) => this.createSimplifiedTableRow(result, index + 1)).join('')}
                     </tbody>
                 </table>
             </div>
@@ -257,19 +287,22 @@ class ResultsDisplay {
     }
 
     /**
-     * Create a table row for a result
+     * Create a simplified table row without parameter columns
      */
-    createTableRow(result, rank) {
+    createSimplifiedTableRow(result, rank) {
         const hasError = result.error;
         const rowClass = hasError ? 'error-row' : (result.totalReturn > 0 ? 'profitable-row' : 'loss-row');
+        
+        // Check if trades are cached for this result
+        const hasCachedTrades = this.tradeCache.has(rank - 1);
+        const detailButtonClass = hasCachedTrades ? 'detail-btn-loaded' : 'detail-btn';
+        
+        // Create parameter tooltip content
+        const parameterTooltip = this.createParameterTooltip(result.parameters);
         
         return `
             <tr class="${rowClass}" data-rank="${rank}">
                 <td>${rank}</td>
-                <td>${result.parameters.emaFloor}</td>
-                <td>${result.parameters.emaCeiling}</td>
-                <td>${result.parameters.volFloor}</td>
-                <td>${result.parameters.volCeiling}</td>
                 <td>${hasError ? 'Error' : this.formatCurrency(result.finalValue)}</td>
                 <td class="${result.totalReturn >= 0 ? 'positive' : 'negative'}">
                     ${hasError ? 'N/A' : this.formatPercent(result.totalReturn)}
@@ -277,17 +310,38 @@ class ResultsDisplay {
                 <td>${hasError ? 'N/A' : this.formatPercent(result.winRate || 0)}</td>
                 <td>${hasError ? 'N/A' : (result.totalTrades || 0)}</td>
                 <td>${hasError ? 'N/A' : this.formatCurrency(result.maxDrawdown || 0)}</td>
-                <td>
-                    <button class="action-btn detail-btn" data-index="${rank - 1}" title="View Details">
+                <td class="actions-cell">
+                    <button class="action-btn ${detailButtonClass}" data-index="${rank - 1}" title="View Detailed Trades">
                         📊
                     </button>
-                    ${!hasError ? `
-                        <button class="action-btn trades-btn" data-index="${rank - 1}" title="View Trades">
-                            📋
-                        </button>
-                    ` : ''}
+                    <button class="action-btn param-btn" data-index="${rank - 1}" title="View Parameters">
+                        ⚙️
+                    </button>
+                    <div class="parameter-tooltip" id="tooltip-${rank - 1}">
+                        ${parameterTooltip}
+                    </div>
                 </td>
             </tr>
+        `;
+    }
+
+    /**
+     * Create parameter tooltip content
+     */
+    createParameterTooltip(parameters) {
+        const paramEntries = Object.entries(parameters)
+            .filter(([key]) => key !== 'feesSlippage') // Hide internal parameter
+            .map(([key, value]) => {
+                const label = this.formatParameterLabel(key);
+                return `<div class="tooltip-param"><span class="param-name">${label}:</span> <span class="param-value">${value}</span></div>`;
+            })
+            .join('');
+        
+        return `
+            <div class="tooltip-header">Strategy Parameters</div>
+            <div class="tooltip-content">
+                ${paramEntries}
+            </div>
         `;
     }
 
@@ -295,21 +349,582 @@ class ResultsDisplay {
      * Attach table event listeners
      */
     attachTableEvents() {
-        // Detail buttons
-        this.tableContainer.querySelectorAll('.detail-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const index = parseInt(e.target.dataset.index);
-                this.showResultDetails(this.currentResults[index]);
+        console.log('[Muuned] Attaching table events...');
+        
+        // Column sorting
+        this.tableContainer.querySelectorAll('.sortable-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.dataset.column;
+                if (this.sortColumn === column) {
+                    // Toggle direction if same column
+                    this.sortDirection = this.sortDirection === 'desc' ? 'asc' : 'desc';
+                } else {
+                    // New column, default to descending
+                    this.sortColumn = column;
+                    this.sortDirection = 'desc';
+                }
+                this.sortAndDisplayResults();
             });
+        });
+
+        // Detail buttons for trade analysis
+        this.tableContainer.querySelectorAll('.detail-btn, .detail-btn-loaded').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const index = parseInt(e.target.dataset.index);
+                console.log('[Muuned] Detail button clicked for result index:', index);
+                
+                await this.analyzeResultTrades(index, e.target);
+            });
+        });
+
+        // Parameter buttons with hover functionality
+        this.tableContainer.querySelectorAll('.param-btn').forEach(btn => {
+            const index = parseInt(btn.dataset.index);
+            const tooltip = document.getElementById(`tooltip-${index}`);
+            
+            console.log(`[Muuned] Setting up tooltip for index ${index}:`, !!tooltip);
+            
+            if (tooltip) {
+                // Show tooltip on hover
+                btn.addEventListener('mouseenter', (e) => {
+                    console.log(`[Muuned] Mouse enter on param button ${index}`);
+                    this.showParameterTooltip(e.target, tooltip);
+                });
+                
+                // Hide tooltip when mouse leaves button
+                btn.addEventListener('mouseleave', (e) => {
+                    console.log(`[Muuned] Mouse leave param button ${index}`);
+                    // Add a small delay to allow moving to tooltip
+                    setTimeout(() => {
+                        if (!tooltip.matches(':hover')) {
+                            this.hideParameterTooltip(tooltip);
+                        }
+                    }, 100);
+                });
+                
+                // Keep tooltip visible when hovering over it
+                tooltip.addEventListener('mouseenter', () => {
+                    console.log(`[Muuned] Mouse enter tooltip ${index}`);
+                    tooltip.style.display = 'block';
+                    tooltip.classList.add('tooltip-visible');
+                });
+                
+                // Hide tooltip when mouse leaves the tooltip
+                tooltip.addEventListener('mouseleave', () => {
+                    console.log(`[Muuned] Mouse leave tooltip ${index}`);
+                    this.hideParameterTooltip(tooltip);
+                });
+            }
+        });
+    }
+
+    /**
+     * Show parameter tooltip with proper positioning
+     */
+    showParameterTooltip(button, tooltip) {
+        console.log('[Muuned] Showing parameter tooltip');
+        
+        // Hide any other visible tooltips first
+        this.hideAllTooltips();
+        
+        // Get button position relative to the viewport
+        const buttonRect = button.getBoundingClientRect();
+        const tooltipWidth = 280;
+        const tooltipHeight = 200; // Approximate height
+        
+        // Calculate position relative to the viewport
+        let left = buttonRect.right + 15; // Position to the right of button
+        let top = buttonRect.top - 20;
+        
+        // Check if tooltip would go off screen to the right
+        if (left + tooltipWidth > window.innerWidth) {
+            // Position to the left of the button instead
+            left = buttonRect.left - tooltipWidth - 15;
+        }
+        
+        // Check if tooltip would go off screen at the top
+        if (top < 10) {
+            top = 10;
+        }
+        
+        // Check if tooltip would go off screen at the bottom
+        if (top + tooltipHeight > window.innerHeight) {
+            top = window.innerHeight - tooltipHeight - 10;
+        }
+        
+        // Position tooltip relative to viewport (fixed positioning)
+        tooltip.style.position = 'fixed';
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        tooltip.style.zIndex = '10000';
+        tooltip.style.display = 'block';
+        
+        console.log(`[Muuned] Tooltip positioned at: left=${left}, top=${top}`);
+        
+        // Add visible class with a small delay for animation
+        setTimeout(() => {
+            tooltip.classList.add('tooltip-visible');
+            console.log('[Muuned] Tooltip should now be visible');
+        }, 10);
+    }
+
+    /**
+     * Hide parameter tooltip
+     */
+    hideParameterTooltip(tooltip) {
+        console.log('[Muuned] Hiding parameter tooltip');
+        tooltip.classList.remove('tooltip-visible');
+        setTimeout(() => {
+            if (!tooltip.classList.contains('tooltip-visible')) {
+                tooltip.style.display = 'none';
+            }
+        }, 300); // Match CSS transition time
+    }
+
+    /**
+     * Hide all visible tooltips
+     */
+    hideAllTooltips() {
+        this.tableContainer.querySelectorAll('.parameter-tooltip').forEach(tooltip => {
+            this.hideParameterTooltip(tooltip);
+        });
+    }
+
+    /**
+     * Analyze result trades by re-running simulation
+     */
+    async analyzeResultTrades(resultIndex, buttonElement) {
+        try {
+            console.log('[Muuned] Starting trade analysis for result index:', resultIndex);
+            
+            // Check if already cached
+            if (this.tradeCache && this.tradeCache.has(resultIndex)) {
+                console.log('[Muuned] Using cached trade data');
+                this.openTradeModal(resultIndex);
+                return;
+            }
+            
+            // Initialize cache if not exists
+            if (!this.tradeCache) {
+                this.tradeCache = new Map();
+            }
+            
+            // Update button to loading state
+            const originalContent = buttonElement.innerHTML;
+            buttonElement.innerHTML = '⏳';
+            buttonElement.disabled = true;
+            buttonElement.style.opacity = '0.6';
+            
+            const result = this.currentResults[resultIndex];
+            console.log('[Muuned] Re-running simulation for parameters:', result.parameters);
+            
+            // Get the processed data from the main app
+            const processedData = window.muunedApp.currentData;
+            if (!processedData) {
+                throw new Error('No market data available. Please run a backtest first.');
+            }
+            
+            // Get market config for proper backtester setup
+            const marketConfig = window.muunedApp.parameterForm.getMarketDataConfig();
+            
+            // Create strategy with the specific parameters
+            const strategy = new CustomScriptStrategy(window.muunedApp.scriptEditor, result.parameters);
+            const signalData = strategy.calculateSignals(
+                processedData.prices.ohlc4,
+                processedData.prices.close
+            );
+            
+            // Run detailed backtest with full trade history
+            const detailedBacktester = new DetailedPortfolioBacktester({
+                startingDenomination: marketConfig.startingDenomination,
+                startingAmount: marketConfig.startingAmount,
+                positionSize: result.parameters.positionSize || 1.0,
+                feesAndSlippage: result.parameters.feesSlippage || 0.001
+            });
+            
+            const tradeHistory = detailedBacktester.runWithFullHistory(processedData.candles, signalData.signals);
+            
+            console.log('[Muuned] Generated trade history:', tradeHistory.trades.length, 'trades');
+            
+            // Cache the trade history
+            this.tradeCache.set(resultIndex, {
+                trades: tradeHistory.trades,
+                parameters: result.parameters,
+                summary: tradeHistory.summary
+            });
+            
+            // Update button to loaded state
+            buttonElement.innerHTML = '📊';
+            buttonElement.classList.remove('detail-btn');
+            buttonElement.classList.add('detail-btn-loaded');
+            buttonElement.disabled = false;
+            buttonElement.style.opacity = '1';
+            
+            // Open modal
+            this.openTradeModal(resultIndex);
+            
+        } catch (error) {
+            console.error('[Muuned] Failed to analyze trades:', error);
+            
+            // Reset button
+            buttonElement.innerHTML = '📊';
+            buttonElement.disabled = false;
+            buttonElement.style.opacity = '1';
+            
+            alert('Failed to analyze trades: ' + error.message);
+        }
+    }
+
+    /**
+     * Open trade modal with cached data
+     */
+    openTradeModal(resultIndex) {
+        const tradeData = this.tradeCache.get(resultIndex);
+        if (!tradeData) {
+            console.error('No trade data found for result index:', resultIndex);
+            return;
+        }
+        
+        console.log('[Muuned] Opening trade modal for', tradeData.trades.length, 'trades');
+        
+        this.currentTradeModal = {
+            resultIndex,
+            ...tradeData,
+            currentPage: 1,
+            tradesPerPage: 500
+        };
+        
+        // Ensure modal exists
+        this.ensureModalExists();
+        
+        // Show modal
+        const modal = document.getElementById('trade-modal');
+        modal.style.display = 'block';
+        
+        // Populate modal content
+        this.populateTradeModal();
+        
+        // Prevent body scrolling
+        document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * Ensure modal HTML exists in DOM
+     */
+    ensureModalExists() {
+        if (document.getElementById('trade-modal')) {
+            return; // Modal already exists
+        }
+        
+        console.log('[Muuned] Creating trade modal HTML');
+        
+        const modalHtml = `
+            <div id="trade-modal" class="trade-modal" style="display: none;">
+                <div class="modal-overlay" onclick="window.muunedApp.resultsDisplay.closeTradeModal()"></div>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Trades</h2>
+                        <button class="modal-close" onclick="window.muunedApp.resultsDisplay.closeTradeModal()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="trade-modal-controls">
+                            <div class="trade-parameters" id="trade-parameters"></div>
+                            <div class="trade-export-controls">
+                                <button class="control-btn export-btn" onclick="window.muunedApp.resultsDisplay.exportTrades('csv')">Export CSV</button>
+                                <button class="control-btn export-btn" onclick="window.muunedApp.resultsDisplay.exportTrades('json')">Export JSON</button>
+                            </div>
+                        </div>
+                        <div class="trade-table-container" id="trade-table-container">
+                            <div class="loading-trades">⌛ Loading trade details...</div>
+                        </div>
+                        <div class="trade-pagination" id="trade-pagination"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    /**
+     * Populate trade modal with data
+     */
+    populateTradeModal() {
+        const { parameters, trades, currentPage, tradesPerPage } = this.currentTradeModal;
+        
+        console.log('[Muuned] Populating modal with', trades.length, 'trades, page', currentPage);
+        
+        // Display parameters
+        const parametersContainer = document.getElementById('trade-parameters');
+        const paramEntries = Object.entries(parameters)
+            .filter(([key]) => key !== 'feesSlippage') // Hide internal parameter
+            .map(([key, value]) => `<span class="param-item"><strong>${this.formatParameterLabel(key)}:</strong> ${value}</span>`)
+            .join('');
+        
+        parametersContainer.innerHTML = `
+            <div class="parameter-list">${paramEntries}</div>
+        `;
+        
+        // Calculate pagination
+        const totalTrades = trades.length;
+        const totalPages = Math.ceil(totalTrades / tradesPerPage);
+        const startIndex = (currentPage - 1) * tradesPerPage;
+        const endIndex = Math.min(startIndex + tradesPerPage, totalTrades);
+        const pageTrades = trades.slice(startIndex, endIndex);
+        
+        console.log('[Muuned] Showing trades', startIndex + 1, 'to', endIndex, 'of', totalTrades);
+        
+        // Display trades table
+        this.displayTradesTable(pageTrades, startIndex);
+        
+        // Display pagination
+        this.displayTradePagination(currentPage, totalPages, totalTrades);
+    }
+
+    /**
+     * Display trades table with fees column
+     */
+    displayTradesTable(trades, startIndex) {
+        const tableContainer = document.getElementById('trade-table-container');
+        
+        if (trades.length === 0) {
+            tableContainer.innerHTML = '<div class="no-trades">No trades found for this strategy.</div>';
+            return;
+        }
+        
+        // Calculate total trades for proper numbering (FIXED: correct trade numbering)
+        const totalTrades = this.currentTradeModal.trades.length;
+        
+        const tableHtml = `
+            <div class="trade-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Trade #</th>
+                            <th>Type</th>
+                            <th>Time</th>
+                            <th>Price</th>
+                            <th>Amount</th>
+                            <th>Change</th>
+                            <th>%</th>
+                            <th>Fees</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${trades.map((trade, index) => this.createTradeRow(trade, totalTrades - startIndex - index)).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        tableContainer.innerHTML = tableHtml;
+    }
+
+    /**
+     * Create a single trade row with improved change calculation and fees
+     */
+    createTradeRow(trade, tradeNumber) {
+        const date = new Date(trade.timestamp);
+        const timeString = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        
+        let changeCell = '';
+        let percentCell = '';
+        
+        if (trade.type === 'sell') {
+            const change = trade.relativeChange || 0;
+            const changePercent = trade.relativeChangePercent || 0;
+            
+            const changeClass = change >= 0 ? 'positive' : 'negative';
+            const changeSign = change >= 0 ? '+' : '';
+            
+            changeCell = `<td class="${changeClass}">${changeSign}${change.toFixed(2)}</td>`;
+            percentCell = `<td class="${changeClass}">${changeSign}${changePercent.toFixed(2)}%</td>`;
+        } else {
+            changeCell = '<td>—</td>';
+            percentCell = '<td>—</td>';
+        }
+        
+        return `
+            <tr class="trade-row ${trade.type}">
+                <td>${tradeNumber}</td>
+                <td class="trade-type ${trade.type}">${trade.type.toUpperCase()}</td>
+                <td>${timeString}</td>
+                <td>${Math.round(trade.price).toLocaleString()} USDT</td>
+                <td>${trade.amount.toFixed(6)}</td>
+                ${changeCell}
+                ${percentCell}
+                <td>${(trade.fees || 0).toFixed(2)} USDT</td>
+                <td>${Math.round(trade.totalValue).toLocaleString()} USDT</td>
+            </tr>
+        `;
+    }
+
+    /**
+     * Display trade pagination
+     */
+    displayTradePagination(currentPage, totalPages, totalTrades) {
+        const paginationContainer = document.getElementById('trade-pagination');
+        
+        let paginationHtml = `
+            <div class="pagination-info">
+                Showing trades ${(currentPage - 1) * 500 + 1} - ${Math.min(currentPage * 500, totalTrades)} of ${totalTrades}
+            </div>
+            <div class="pagination-controls">
+        `;
+        
+        // Previous button
+        if (currentPage > 1) {
+            paginationHtml += `
+                <button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToTradePage(${currentPage - 1})">
+                    ← Previous
+                </button>
+            `;
+        }
+        
+        // Page numbers (show current and nearby pages)
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+        
+        for (let page = startPage; page <= endPage; page++) {
+            const activeClass = page === currentPage ? 'active' : '';
+            paginationHtml += `
+                <button class="pagination-btn ${activeClass}" onclick="window.muunedApp.resultsDisplay.goToTradePage(${page})">
+                    ${page}
+                </button>
+            `;
+        }
+        
+        // Next button
+        if (currentPage < totalPages) {
+            paginationHtml += `
+                <button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToTradePage(${currentPage + 1})">
+                    Next →
+                </button>
+            `;
+        }
+        
+        paginationHtml += '</div>';
+        
+        paginationContainer.innerHTML = paginationHtml;
+    }
+
+    /**
+     * Navigate to specific trade page
+     */
+    goToTradePage(page) {
+        if (this.currentTradeModal) {
+            this.currentTradeModal.currentPage = page;
+            this.populateTradeModal();
+        }
+    }
+
+    /**
+     * Close trade modal
+     */
+    closeTradeModal() {
+        const modal = document.getElementById('trade-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        document.body.style.overflow = '';
+        this.currentTradeModal = null;
+    }
+
+    /**
+     * Export trades
+     */
+    exportTrades(format) {
+        if (!this.currentTradeModal) return;
+        
+        const { trades, parameters } = this.currentTradeModal;
+        const timestamp = new Date().toISOString().split('T')[0];
+        const filename = `trades-${timestamp}`;
+        
+        if (format === 'csv') {
+            this.exportTradesCSV(trades, filename);
+        } else if (format === 'json') {
+            this.exportTradesJSON(trades, parameters, filename);
+        }
+    }
+
+    /**
+     * Export trades as CSV with fees column
+     */
+    exportTradesCSV(trades, filename) {
+        const headers = ['Trade #', 'Type', 'Date', 'Time', 'Price', 'Amount', 'Change', 'Change %', 'Fees', 'Total Value'];
+        
+        const rows = trades.map((trade, index) => {
+            const date = new Date(trade.timestamp);
+            const change = trade.type === 'sell' ? (trade.relativeChange || 0) : 0;
+            const changePercent = trade.type === 'sell' ? (trade.relativeChangePercent || 0) : 0;
+            
+            return [
+                trades.length - index, // Correct trade numbering
+                trade.type.toUpperCase(),
+                date.toLocaleDateString(),
+                date.toLocaleTimeString(),
+                trade.price.toFixed(2),
+                trade.amount.toFixed(6),
+                change.toFixed(2),
+                changePercent.toFixed(2),
+                (trade.fees || 0).toFixed(2),
+                trade.totalValue.toFixed(2)
+            ];
         });
         
-        // Trades buttons
-        this.tableContainer.querySelectorAll('.trades-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const index = parseInt(e.target.dataset.index);
-                this.showTradeDetails(this.currentResults[index]);
-            });
-        });
+        const csvContent = [headers, ...rows]
+            .map(row => row.join(','))
+            .join('\n');
+        
+        this.downloadFile(csvContent, `${filename}.csv`, 'text/csv');
+    }
+
+    /**
+     * Export trades as JSON
+     */
+    exportTradesJSON(trades, parameters, filename) {
+        const exportData = {
+            parameters,
+            trades: trades.map((trade, index) => ({
+                tradeNumber: trades.length - index, // Correct trade numbering
+                type: trade.type,
+                timestamp: trade.timestamp,
+                date: new Date(trade.timestamp).toISOString(),
+                price: trade.price,
+                amount: trade.amount,
+                value: trade.value,
+                totalValue: trade.totalValue,
+                fees: trade.fees,
+                relativeChange: trade.relativeChange,
+                relativeChangePercent: trade.relativeChangePercent
+            })),
+            summary: {
+                totalTrades: trades.length,
+                exportDate: new Date().toISOString()
+            }
+        };
+        
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        this.downloadFile(jsonContent, `${filename}.json`, 'application/json');
+    }
+
+    /**
+     * Download file utility
+     */
+    downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 
     /**
@@ -390,6 +1005,12 @@ class ResultsDisplay {
         } else {
             this.displayTable(sorted);
         }
+        
+        // Update sort direction button
+        const sortBtn = document.getElementById('sort-direction');
+        if (sortBtn) {
+            sortBtn.textContent = this.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
+        }
     }
 
     /**
@@ -417,25 +1038,26 @@ class ResultsDisplay {
     }
 
     /**
-     * Prepare data for export
+     * Prepare data for export with dynamic parameters
      */
     prepareExportData() {
-        return this.currentResults.map((result, index) => ({
-            rank: index + 1,
-            emaFloor: result.parameters.emaFloor,
-            emaCeiling: result.parameters.emaCeiling,
-            volFloor: result.parameters.volFloor,
-            volCeiling: result.parameters.volCeiling,
-            smoothLength: result.parameters.smoothLength,
-            forceBuyThreshold: result.parameters.forceBuyThreshold,
-            finalValue: result.finalValue,
-            totalReturn: result.totalReturn,
-            winRate: result.winRate,
-            totalTrades: result.totalTrades,
-            maxDrawdown: result.maxDrawdown,
-            hasError: !!result.error,
-            errorMessage: result.error || ''
-        }));
+        if (!this.currentResults || this.currentResults.length === 0) return [];
+        
+        return this.currentResults.map((result, index) => {
+            const exportRow = {
+                rank: index + 1,
+                ...result.parameters, // Still export all parameters
+                finalValue: result.finalValue,
+                totalReturn: result.totalReturn,
+                winRate: result.winRate,
+                totalTrades: result.totalTrades,
+                maxDrawdown: result.maxDrawdown,
+                hasError: !!result.error,
+                errorMessage: result.error || ''
+            };
+            
+            return exportRow;
+        });
     }
 
     /**
@@ -464,40 +1086,6 @@ class ResultsDisplay {
     }
 
     /**
-     * Download file utility
-     */
-    downloadFile(content, filename, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    }
-
-    /**
-     * Show detailed view of a result
-     */
-    showResultDetails(result) {
-        // Create modal or detailed view
-        // This would expand to show charts, detailed metrics, etc.
-        console.log('Showing details for result:', result);
-        alert('Detailed view would be implemented here');
-    }
-
-    /**
-     * Show trade details
-     */
-    showTradeDetails(result) {
-        // Show trade log in a modal or separate view
-        console.log('Showing trades for result:', result);
-        alert('Trade details view would be implemented here');
-    }
-
-    /**
      * Show no results message
      */
     showNoResults() {
@@ -514,19 +1102,89 @@ class ResultsDisplay {
      */
     clear() {
         this.currentResults = null;
+        this.tradeCache.clear();
         this.resultsContainer.style.display = 'none';
         this.showNoResults();
+    }
+
+    /**
+     * Format parameter name for display
+     */
+    formatParameterLabel(paramName) {
+        return paramName
+            .replace(/([A-Z])/g, ' $1')
+            .replace(/^./, str => str.toUpperCase())
+            .trim();
     }
 
     /**
      * Formatting utilities
      */
     formatCurrency(value) {
-        return `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        return `${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     }
 
     formatPercent(value) {
         const formatted = value.toFixed(1);
         return value >= 0 ? `+${formatted}%` : `${formatted}%`;
+    }
+
+    /**
+     * Reset all cached trade data (call this when starting a new backtest)
+     */
+    resetTradeCache() {
+        console.log('[Muuned] Resetting trade cache and button states');
+        
+        // Clear the cache
+        this.tradeCache.clear();
+        
+        // Close any open modal
+        if (this.currentTradeModal) {
+            this.closeTradeModal();
+        }
+        
+        // Reset all button states back to default
+        document.querySelectorAll('.detail-btn-loaded').forEach(btn => {
+            btn.classList.remove('detail-btn-loaded');
+            btn.classList.add('detail-btn');
+        });
+    }
+
+    /**
+     * Adjust font sizes dynamically to fit content
+     */
+    adjustSummaryFontSizes() {
+        setTimeout(() => {
+            const metricCards = document.querySelectorAll('.metric-value');
+            
+            metricCards.forEach(card => {
+                const text = card.textContent;
+                let fontSize = 2.0; // Start with default 2em
+                
+                // Reduce font size based on text length
+                if (text.length > 12) {
+                    fontSize = 1.4; // Very long numbers
+                } else if (text.length > 10) {
+                    fontSize = 1.6; // Long numbers
+                } else if (text.length > 8) {
+                    fontSize = 1.8; // Medium numbers
+                }
+                
+                card.style.fontSize = `${fontSize}em`;
+            });
+        }, 50); // Small delay to ensure DOM is updated
+    }
+
+    /**
+     * Setup keyboard event listeners for closing the modal
+     */
+    setupKeyboardListeners() {
+        document.addEventListener('keydown', (e) => {
+            // Close modal with ESC key
+            if (e.key === 'Escape' && this.currentTradeModal) {
+                console.log('[Muuned] ESC key pressed, closing trade modal');
+                this.closeTradeModal();
+            }
+        });
     }
 }
