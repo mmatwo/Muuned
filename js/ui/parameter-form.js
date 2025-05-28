@@ -107,9 +107,6 @@ class ParameterForm {
                 <button type="button" id="toggleAdvanced" class="toggle-btn">
                     Show Advanced Parameters
                 </button>
-                <button type="button" id="resetParams" class="reset-btn">
-                    Reset to Defaults
-                </button>
             </div>
         `;
     
@@ -266,13 +263,7 @@ class ParameterForm {
         const toggleBtn = document.getElementById('toggleAdvanced');
         if (toggleBtn) {
             toggleBtn.addEventListener('click', () => this.toggleAdvancedParams());
-        }
-        
-        // Reset parameters
-        const resetBtn = document.getElementById('resetParams');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', () => this.resetToDefaults());
-        }
+        }        
     }
 
     /**
@@ -431,30 +422,6 @@ class ParameterForm {
             return '⚠️ Large number of combinations - may take several minutes';
         }
         return null;
-    }
-
-    /**
-     * Reset parameters to their default values
-     */
-    resetToDefaults() {
-        const paramInputs = this.strategyParametersContainer.querySelectorAll('input[data-param-name]');
-        
-        paramInputs.forEach(input => {
-            const paramName = input.dataset.paramName;
-            const paramDef = this.parameterParser.getParameterDefinition(paramName);
-            
-            if (paramDef) {
-                input.value = paramDef.defaultValue;
-            }
-        });
-        
-        // Reset fees/slippage
-        const feesSlippageInput = document.getElementById('feesSlippage');
-        if (feesSlippageInput) {
-            feesSlippageInput.value = '0.1';
-        }
-        
-        this.updateParameterCount();
     }
 
     /**

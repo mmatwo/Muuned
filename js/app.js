@@ -105,7 +105,7 @@ class MuunedApp {
             const isConnected = await this.binanceAPI.checkConnectivity();
             
             if (isConnected) {
-                statusElement.innerHTML = '<span class="status-ready">✅ API Connected</span>';
+                statusElement.innerHTML = '<span class="status-ready">✅ Connected to Binance</span>';
             } else {
                 statusElement.innerHTML = '<span class="status-loading">❌ API Unavailable</span>';
                 this.showWarning('Binance API is not accessible. Please check your internet connection.');
