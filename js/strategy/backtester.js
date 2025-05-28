@@ -364,7 +364,7 @@ constructor() {
  */
 async runSingle(processedData, params, marketConfig) {
     try {
-        console.log('[Muuned] BacktestEngine.runSingle called with market config:', marketConfig);
+        // console.log('[Muuned] BacktestEngine.runSingle called with market config:', marketConfig);
         
         // Create custom strategy that uses the script editor
         const strategy = new CustomScriptStrategy(window.muunedApp.scriptEditor, params);

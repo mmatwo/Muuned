@@ -9,6 +9,8 @@ class ResultsDisplay {
         this.currentResults = null;
         this.sortColumn = 'finalValue';
         this.sortDirection = 'desc';
+        this.currentPage = 1; // Add this line
+        this.resultsPerPage = 100; // Add this line
         
         // Trade modal functionality
         this.tradeCache = new Map();
@@ -25,7 +27,10 @@ class ResultsDisplay {
         this.displayContainer.innerHTML = `
             <div class="results-summary" id="results-summary"></div>
             <div class="results-controls" id="results-controls"></div>
-            <div class="results-table-container" id="results-table-container"></div>
+            <div class="results-table-container" id="results-table-container">
+                <div class="no-results">Run a backtest to see results</div>
+            </div>
+            <div class="table-pagination" id="results-pagination" style="display: none;"></div>
         `;
         
         this.summaryContainer = document.getElementById('results-summary');
@@ -73,7 +78,7 @@ class ResultsDisplay {
         const summary = this.calculateSummaryMetrics(results);
         
         this.summaryContainer.innerHTML = `
-            <div class="results-grid">
+            <div class="results-grid compact">
                 <div class="metric-card ${summary.bestReturn >= 0 ? 'positive' : 'negative'}">
                     <div class="metric-value">$${summary.bestFinalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                     <div class="metric-label">Best Final Value</div>
@@ -144,29 +149,19 @@ class ResultsDisplay {
     displayControls() {
         this.controlsContainer.innerHTML = `
             <div class="controls-row">
-                <div class="view-controls">
-                    <button class="control-btn active" data-view="top20">Top 20</button>
-                    <button class="control-btn" data-view="top100">Top 100</button>
-                    <button class="control-btn" data-view="all">All Results</button>
-                    <button class="control-btn" data-view="profitable">Profitable Only</button>
+                <div class="pagination-section">
+                    <div class="pagination-controls" id="pagination-controls">
+                        <!-- Will be populated when results are displayed -->
+                    </div>
+                    <div class="pagination-info" id="pagination-info">
+                        <!-- Will be populated when results are displayed -->
+                    </div>
                 </div>
                 
                 <div class="export-controls">
                     <button class="control-btn export-btn" data-export="csv">Export CSV</button>
                     <button class="control-btn export-btn" data-export="json">Export JSON</button>
                 </div>
-            </div>
-            
-            <div class="filter-controls">
-                <input type="text" id="search-filter" placeholder="Search parameters..." class="search-input">
-                <select id="sort-column" class="sort-select">
-                    <option value="finalValue">Final Value</option>
-                    <option value="totalReturn">Total Return</option>
-                    <option value="winRate">Win Rate</option>
-                    <option value="totalTrades">Total Trades</option>
-                    <option value="maxDrawdown">Max Drawdown</option>
-                </select>
-                <button class="control-btn" id="sort-direction">↓ Desc</button>
             </div>
         `;
         
@@ -192,25 +187,15 @@ class ResultsDisplay {
             });
         });
         
-        // Search filter
-        const searchInput = document.getElementById('search-filter');
-        searchInput.addEventListener('input', (e) => {
-            this.searchResults(e.target.value);
-        });
+        // sortSelect.addEventListener('change', (e) => {
+        //     this.sortColumn = e.target.value;
+        //     this.sortAndDisplayResults();
+        // });
         
-        // Sort controls
-        const sortSelect = document.getElementById('sort-column');
-        const sortDirection = document.getElementById('sort-direction');
-        
-        sortSelect.addEventListener('change', (e) => {
-            this.sortColumn = e.target.value;
-            this.sortAndDisplayResults();
-        });
-        
-        sortDirection.addEventListener('click', () => {
-            this.toggleSortDirection();
-            this.sortAndDisplayResults();
-        });
+        // sortDirection.addEventListener('click', () => {
+        //     this.toggleSortDirection();
+        //     this.sortAndDisplayResults();
+        // });
     }
 
     /**
@@ -226,11 +211,18 @@ class ResultsDisplay {
     /**
      * Display results table with sortable headers
      */
-    displayTable(results, limit = 20) {
-        const displayResults = results.slice(0, limit);
+    displayTable(results, limit = null) {
+        const page = this.currentPage || 1;
+        const actualLimit = limit || this.resultsPerPage;
         
+        const startIndex = (page - 1) * actualLimit;
+        const endIndex = Math.min(startIndex + actualLimit, results.length);
+        const displayResults = results.slice(startIndex, endIndex);
+    
         if (displayResults.length === 0) {
             this.tableContainer.innerHTML = '<div class="no-results"><p>No results to display</p></div>';
+            // Clear pagination when no results
+            this.updatePaginationInControls('', '');
             return;
         }
         
@@ -242,48 +234,123 @@ class ResultsDisplay {
             return '';
         };
         
-        const headerHtml = `
-            <tr>
-                <th>Rank</th>
-                <th class="sortable-header" data-column="finalValue">
-                    Final Value${getSortIcon('finalValue')}
-                </th>
-                <th class="sortable-header" data-column="totalReturn">
-                    Return %${getSortIcon('totalReturn')}
-                </th>
-                <th class="sortable-header" data-column="winRate">
-                    Win Rate${getSortIcon('winRate')}
-                </th>
-                <th class="sortable-header" data-column="totalTrades">
-                    Trades${getSortIcon('totalTrades')}
-                </th>
-                <th class="sortable-header" data-column="maxDrawdown">
-                    Max DD${getSortIcon('maxDrawdown')}
-                </th>
-                <th>Actions</th>
-            </tr>
-        `;
+        const getHeaderClass = (column) => {
+            return this.sortColumn === column ? 'sortable-header active' : 'sortable-header';
+        };
         
+        // Build table HTML WITHOUT pagination (pagination is now in controls)
         this.tableContainer.innerHTML = `
             <div class="results-table">
                 <table>
                     <thead>
-                        ${headerHtml}
+                        <tr>
+                            <th>Rank</th>
+                            <th class="${getHeaderClass('finalValue')}" data-column="finalValue">
+                                Final Value${getSortIcon('finalValue')}
+                            </th>
+                            <th class="${getHeaderClass('totalReturn')}" data-column="totalReturn">
+                                Return %${getSortIcon('totalReturn')}
+                            </th>
+                            <th class="${getHeaderClass('winRate')}" data-column="winRate">
+                                Win Rate${getSortIcon('winRate')}
+                            </th>
+                            <th class="${getHeaderClass('totalTrades')}" data-column="totalTrades">
+                                Trades${getSortIcon('totalTrades')}
+                            </th>
+                            <th class="${getHeaderClass('maxDrawdown')}" data-column="maxDrawdown">
+                                Max DD${getSortIcon('maxDrawdown')}
+                            </th>
+                            <th>Actions</th>
+                        </tr>
                     </thead>
                     <tbody>
-                        ${displayResults.map((result, index) => this.createSimplifiedTableRow(result, index + 1)).join('')}
+                        ${displayResults.map((result, index) => this.createSimplifiedTableRow(result, startIndex + index + 1)).join('')}
                     </tbody>
                 </table>
             </div>
-            
-            ${results.length > limit ? `
-                <div class="table-pagination">
-                    <span>Showing ${limit} of ${results.length} results</span>
-                </div>
-            ` : ''}
         `;
         
+        // Update pagination in the controls section
+        if (results.length > actualLimit) {
+            const totalPages = Math.ceil(results.length / actualLimit);
+            const paginationInfo = `Showing ${startIndex + 1}-${endIndex} of ${results.length} results`;
+            const paginationControls = this.generateResultsPagination(page, totalPages);
+            this.updatePaginationInControls(paginationInfo, paginationControls);
+        } else {
+            // Clear pagination if not needed
+            this.updatePaginationInControls('', '');
+        }
+        
         this.attachTableEvents();
+    }
+    
+    /**
+     * Update pagination info and controls in the controls section
+     */
+    updatePaginationInControls(infoText, controlsHtml) {
+        const paginationInfo = document.getElementById('pagination-info');
+        const paginationControls = document.getElementById('pagination-controls');
+        
+        if (paginationInfo) {
+            paginationInfo.innerHTML = infoText;
+        }
+        
+        if (paginationControls) {
+            paginationControls.innerHTML = controlsHtml;
+        }
+    }
+
+    displayResultsPagination(currentPage, totalPages, totalResults, startIndex, endIndex) {
+        // Create pagination container if it doesn't exist
+        let paginationContainer = document.getElementById('results-pagination');
+        if (!paginationContainer) {
+            paginationContainer = document.createElement('div');
+            paginationContainer.id = 'results-pagination';
+            paginationContainer.className = 'table-pagination';
+            this.tableContainer.appendChild(paginationContainer);
+        }
+        
+        let paginationHtml = `
+            <div class="pagination-info">
+                Showing results ${startIndex} - ${endIndex} of ${totalResults}
+            </div>
+            <div class="pagination-controls">
+        `;
+        
+        // Previous button
+        if (currentPage > 1) {
+            paginationHtml += `
+                <button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${currentPage - 1})">
+                    ← Previous
+                </button>
+            `;
+        }
+        
+        // Page numbers (show current and nearby pages)
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+        
+        for (let page = startPage; page <= endPage; page++) {
+            const activeClass = page === currentPage ? 'active' : '';
+            paginationHtml += `
+                <button class="pagination-btn ${activeClass}" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${page})">
+                    ${page}
+                </button>
+            `;
+        }
+        
+        // Next button
+        if (currentPage < totalPages) {
+            paginationHtml += `
+                <button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${currentPage + 1})">
+                    Next →
+                </button>
+            `;
+        }
+        
+        paginationHtml += '</div>';
+        
+        paginationContainer.innerHTML = paginationHtml;
     }
 
     /**
@@ -385,18 +452,18 @@ class ResultsDisplay {
             const index = parseInt(btn.dataset.index);
             const tooltip = document.getElementById(`tooltip-${index}`);
             
-            console.log(`[Muuned] Setting up tooltip for index ${index}:`, !!tooltip);
+            // console.log(`[Muuned] Setting up tooltip for index ${index}:`, !!tooltip);
             
             if (tooltip) {
                 // Show tooltip on hover
                 btn.addEventListener('mouseenter', (e) => {
-                    console.log(`[Muuned] Mouse enter on param button ${index}`);
+                    // console.log(`[Muuned] Mouse enter on param button ${index}`);
                     this.showParameterTooltip(e.target, tooltip);
                 });
                 
                 // Hide tooltip when mouse leaves button
                 btn.addEventListener('mouseleave', (e) => {
-                    console.log(`[Muuned] Mouse leave param button ${index}`);
+                    // console.log(`[Muuned] Mouse leave param button ${index}`);
                     // Add a small delay to allow moving to tooltip
                     setTimeout(() => {
                         if (!tooltip.matches(':hover')) {
@@ -407,14 +474,14 @@ class ResultsDisplay {
                 
                 // Keep tooltip visible when hovering over it
                 tooltip.addEventListener('mouseenter', () => {
-                    console.log(`[Muuned] Mouse enter tooltip ${index}`);
+                    // console.log(`[Muuned] Mouse enter tooltip ${index}`);
                     tooltip.style.display = 'block';
                     tooltip.classList.add('tooltip-visible');
                 });
                 
                 // Hide tooltip when mouse leaves the tooltip
                 tooltip.addEventListener('mouseleave', () => {
-                    console.log(`[Muuned] Mouse leave tooltip ${index}`);
+                    // console.log(`[Muuned] Mouse leave tooltip ${index}`);
                     this.hideParameterTooltip(tooltip);
                 });
             }
@@ -457,17 +524,18 @@ class ResultsDisplay {
         
         // Position tooltip relative to viewport (fixed positioning)
         tooltip.style.position = 'fixed';
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
+        tooltip.style.right = '20px';
+        // tooltip.style.left = `${left}px`;
+        // tooltip.style.top = `${top}px`;
         tooltip.style.zIndex = '10000';
         tooltip.style.display = 'block';
         
-        console.log(`[Muuned] Tooltip positioned at: left=${left}, top=${top}`);
+        // console.log(`[Muuned] Tooltip positioned at: left=${left}, top=${top}`);
         
         // Add visible class with a small delay for animation
         setTimeout(() => {
             tooltip.classList.add('tooltip-visible');
-            console.log('[Muuned] Tooltip should now be visible');
+            // console.log('[Muuned] Tooltip should now be visible');
         }, 10);
     }
 
@@ -475,7 +543,7 @@ class ResultsDisplay {
      * Hide parameter tooltip
      */
     hideParameterTooltip(tooltip) {
-        console.log('[Muuned] Hiding parameter tooltip');
+        // console.log('[Muuned] Hiding parameter tooltip');
         tooltip.classList.remove('tooltip-visible');
         setTimeout(() => {
             if (!tooltip.classList.contains('tooltip-visible')) {
@@ -934,7 +1002,7 @@ class ResultsDisplay {
         if (!this.currentResults) return;
         
         let filteredResults = [...this.currentResults];
-        let limit = 20;
+        let limit = null;
         
         switch (viewType) {
             case 'top20':
@@ -944,14 +1012,14 @@ class ResultsDisplay {
                 limit = 100;
                 break;
             case 'all':
-                limit = filteredResults.length;
+                limit = null;
                 break;
             case 'profitable':
                 filteredResults = filteredResults.filter(r => !r.error && r.totalReturn > 0);
-                limit = filteredResults.length;
+                limit = null;
                 break;
         }
-        
+        this.currentPage = 1; // Reset to page 1 when filtering
         this.displayTable(filteredResults, limit);
     }
 
@@ -997,6 +1065,7 @@ class ResultsDisplay {
         });
         
         this.currentResults = sorted;
+        this.currentPage = 1; // Reset to page 1 when sorting
         
         // Get current view limit
         const activeView = this.controlsContainer.querySelector('[data-view].active');
@@ -1159,15 +1228,15 @@ class ResultsDisplay {
             
             metricCards.forEach(card => {
                 const text = card.textContent;
-                let fontSize = 2.0; // Start with default 2em
+                let fontSize = 1.2; // Start with default 2em
                 
                 // Reduce font size based on text length
                 if (text.length > 12) {
-                    fontSize = 1.4; // Very long numbers
-                } else if (text.length > 10) {
-                    fontSize = 1.6; // Long numbers
+                    fontSize = 0.8; // Very long numbers
                 } else if (text.length > 8) {
-                    fontSize = 1.8; // Medium numbers
+                    fontSize = 1.0; // Long numbers
+                } else if (text.length > 8) {
+                    fontSize = 1.2; // Medium numbers
                 }
                 
                 card.style.fontSize = `${fontSize}em`;
@@ -1186,5 +1255,41 @@ class ResultsDisplay {
                 this.closeTradeModal();
             }
         });
+    }
+    generateResultsPagination(currentPage, totalPages) {
+        let html = '';
+        
+        // Previous button
+        if (currentPage > 1) {
+            html += `<button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${currentPage - 1})">← Previous</button>`;
+        }
+        
+        // Page numbers (show current ± 2)
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+        
+        for (let page = startPage; page <= endPage; page++) {
+            const activeClass = page === currentPage ? 'active' : '';
+            html += `<button class="pagination-btn ${activeClass}" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${page})">${page}</button>`;
+        }
+        
+        // Next button
+        if (currentPage < totalPages) {
+            html += `<button class="pagination-btn" onclick="window.muunedApp.resultsDisplay.goToResultsPage(${currentPage + 1})">Next →</button>`;
+        }
+        
+        return html;
+    }
+
+    goToResultsPage(page) {
+        this.currentPage = page;
+        
+        // Get current filtered results
+        const activeView = this.controlsContainer.querySelector('[data-view].active');
+        if (activeView) {
+            this.filterResults(activeView.dataset.view);
+        } else {
+            this.displayTable(this.currentResults);
+        }
     }
 }

@@ -6,7 +6,6 @@ class ScriptEditor {
     constructor(containerId) {
         this.container = document.getElementById(containerId);
         this.currentScript = this.getDefaultScript();
-        this.isExpanded = true;
         this.editor = null;
         this.codeValidator = new CodeValidator();
         this.validationEnabled = true;
@@ -20,26 +19,25 @@ class ScriptEditor {
     initializeEditor() {
         this.container.innerHTML = `
             <div class="script-editor-header">
-                <h2>📝 Strategy Script</h2>
+                <h2>Script Editor</h2>
                 <div class="editor-controls">
-                    <button class="control-btn" id="reset-script">Reset to Default</button>
-                    <button class="control-btn" id="toggle-editor">${this.isExpanded ? 'Collapse' : 'Expand'}</button>
+                <div class="editor-status" id="script-status">
+                    <span class="status-ready">✅ Script Ready</span>
+                </div>
+                    <button class="control-btn" id="reset-script">Reset Script</button>
                 </div>
             </div>
             
-            <div class="script-editor-content ${this.isExpanded ? 'expanded' : 'collapsed'}">
+            <div class="script-editor-content expanded">
                 <div class="editor-info">
                     <p>Write JavaScript code to generate trading signals. Your script should return an array of signals (-1=sell, 0=hold, 1=buy).</p>
-                    <p><strong>Available:</strong> <code>TechnicalIndicators</code> class with 70+ Pine Script functions, <code>signalPrices</code>, <code>executionPrices</code>, <code>params</code> object</p>
                 </div>
                 
                 <div class="editor-wrapper">
                     <div id="codemirror-container" class="codemirror-container"></div>
                 </div>
                 
-                <div class="editor-status" id="script-status">
-                    <span class="status-ready">✅ Script Ready</span>
-                </div>
+
                 
                 <div id="validation-issues" class="validation-issues" style="display: none;"></div>
             </div>
@@ -76,6 +74,8 @@ class ScriptEditor {
             indentWithTabs: false,
             foldGutter: true,
             gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+            viewportMargin: 10, // Add this line
+            scrollbarStyle: 'native', // Add this line
             extraKeys: {
                 'Ctrl-Space': 'autocomplete',
                 'Ctrl-/': 'toggleComment',
@@ -94,16 +94,31 @@ class ScriptEditor {
             this.currentScript = this.editor.getValue();
             this.validateScript();
             
+            // Set up the callback reference
+            if (!this.onScriptChange) {
+                this.onScriptChange = null;
+            }
+
+            // Trigger initial parameter detection if callback exists
+            setTimeout(() => {
+                if (this.onScriptChange) {
+                    this.onScriptChange(this.currentScript);
+                }
+            }, 50);
+
             // Notify parameter form of script changes
             if (this.onScriptChange) {
                 this.onScriptChange(this.currentScript);
             }
         });
 
-        // Auto-resize editor
-        this.editor.on('changes', () => {
-            this.autoResizeEditor();
-        });
+        this.refreshOnTabSwitch = () => {
+            if (this.editor) {
+                setTimeout(() => {
+                    this.editor.refresh();
+                }, 100);
+            }
+        };
 
         // Initial validation
         this.validateScript();
@@ -220,15 +235,15 @@ class ScriptEditor {
     /**
      * Auto-resize editor based on content
      */
-    autoResizeEditor() {
-        const minHeight = 400;
-        const maxHeight = 600;
-        const lineHeight = this.editor.defaultTextHeight();
-        const lineCount = this.editor.lineCount();
-        const desiredHeight = Math.max(minHeight, Math.min(maxHeight, lineCount * lineHeight + 40));
+    // autoResizeEditor() {
+    //     const minHeight = 400;
+    //     const maxHeight = 600;
+    //     const lineHeight = this.editor.defaultTextHeight();
+    //     const lineCount = this.editor.lineCount();
+    //     const desiredHeight = Math.max(minHeight, Math.min(maxHeight, lineCount * lineHeight + 40));
         
-        this.editor.setSize(null, desiredHeight);
-    }
+    //     this.editor.setSize(null, desiredHeight);
+    // }
 
     /**
      * Format code using basic JavaScript formatting
@@ -306,12 +321,7 @@ class ScriptEditor {
     /**
      * Attach event listeners to editor controls
      */
-    attachEventListeners() {
-        // Toggle editor expansion
-        document.getElementById('toggle-editor').addEventListener('click', () => {
-            this.toggleEditor();
-        });
-        
+    attachEventListeners() {        
         // Reset script
         document.getElementById('reset-script').addEventListener('click', () => {
             this.resetScript();
@@ -378,31 +388,6 @@ class ScriptEditor {
     }
 
     /**
-     * Toggle editor expanded/collapsed state
-     */
-    toggleEditor() {
-        this.isExpanded = !this.isExpanded;
-        const content = this.container.querySelector('.script-editor-content');
-        const toggleBtn = document.getElementById('toggle-editor');
-        
-        if (this.isExpanded) {
-            content.classList.remove('collapsed');
-            content.classList.add('expanded');
-            toggleBtn.textContent = 'Collapse';
-        } else {
-            content.classList.remove('expanded');
-            content.classList.add('collapsed');
-            toggleBtn.textContent = 'Expand';
-        }
-        
-        // Refresh CodeMirror after DOM changes
-        setTimeout(() => {
-            this.editor.refresh();
-            this.autoResizeEditor();
-        }, 100);
-    }
-
-    /**
      * Reset script to default
      */
     resetScript() {
@@ -435,7 +420,11 @@ class ScriptEditor {
             
             return true;
         } catch (error) {
-            statusElement.innerHTML = `<span class="status-loading">❌ Syntax Error: ${error.message}</span>`;
+            // Extract line number from error message
+            const lineMatch = error.message.match(/line (\d+)/i);
+            const lineNumber = lineMatch ? ` (Line ${lineMatch[1]})` : '';
+            
+            statusElement.innerHTML = `<span class="status-loading">❌ Syntax Error${lineNumber}: ${error.message}</span>`;
             return false;
         }
     }

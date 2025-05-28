@@ -31,13 +31,14 @@ class MuunedApp {
             this.progressBar = new ProgressBar('progress-container');
             this.resultsDisplay = new ResultsDisplay('results-display', 'results-container');
             this.backtester = new BacktestEngine();
-            
+            this.setupTabSwitching();
+
             // Setup event listeners
             this.setupEventListeners();
             
             // Connect script editor to parameter form
             this.connectScriptEditorToParameterForm();
-            
+
             // Check API connectivity
             await this.checkAPIConnectivity();
             
@@ -63,6 +64,12 @@ class MuunedApp {
         this.parameterForm.on('parametersUpdated', (discovery) => {
             console.log(`[Muuned] Parameters updated: ${discovery.totalCount} parameters found`);
         });
+        
+        // Trigger initial parameter detection with default script
+        setTimeout(() => {
+            const initialScript = this.scriptEditor.getCurrentScript();
+            this.parameterForm.updateParametersFromScript(initialScript);
+        }, 100);
     }
 
     /**
@@ -132,11 +139,11 @@ class MuunedApp {
         runButton.disabled = !isValid || this.isRunning;
         
         if (!isValid) {
-            runButton.textContent = '⚠️ Fix Parameters';
+            runButton.textContent = 'Fix Parameters';
         } else if (this.isRunning) {
-            runButton.textContent = '⏳ Running...';
+            runButton.textContent = 'Running...';
         } else {
-            runButton.textContent = '🚀 Run Backtest';
+            runButton.textContent = 'Run Backtest';
         }
     }
 
@@ -150,6 +157,12 @@ class MuunedApp {
             this.isRunning = true;
             this.updateRunButtonState();
             
+            // Reset and show progress bar immediately
+            this.progressBar.reset();
+            this.progressBar.show();
+            this.progressBar.updateProgress(0, 'Initializing backtest...');
+
+
             // Reset trade cache and button states from previous backtests
             this.resultsDisplay.resetTradeCache();
 
@@ -366,6 +379,42 @@ class MuunedApp {
     clearMarketDataCache() {
         this.marketDataCache.clear();
         console.log('[Muuned] Market data cache cleared');
+    }
+    setupTabSwitching() {
+        // Main tab switching (existing code)
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetTab = e.target.dataset.tab;
+                
+                // Update tab buttons
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                // Update tab panels
+                document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+                document.getElementById(`${targetTab}-tab`).classList.add('active');
+                
+                // Refresh code editor when switching to Create tab
+                if (targetTab === 'create' && this.scriptEditor.refreshOnTabSwitch) {
+                    this.scriptEditor.refreshOnTabSwitch();
+                }
+            });
+        });
+        
+        // Sidebar tab switching (NEW)
+        document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetSidebarTab = e.target.dataset.sidebarTab;
+                
+                // Update sidebar tab buttons
+                document.querySelectorAll('.sidebar-tab-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                // Update sidebar tab panels
+                document.querySelectorAll('.sidebar-tab-panel').forEach(panel => panel.classList.remove('active'));
+                document.getElementById(`${targetSidebarTab}-tab`).classList.add('active');
+            });
+        });
     }
 }
 
