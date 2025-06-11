@@ -403,7 +403,7 @@ async runBatch(processedData, parameterSets, marketConfig, onProgress = null) {
     this.results = [];
     
     const performanceMonitor = new PerformanceMonitor();
-    const batchSize = 50; // Process in smaller batches for better memory management
+    const batchSize = 250; // Process in smaller batches for better memory management
     const totalBatches = Math.ceil(parameterSets.length / batchSize);
     
     performanceMonitor.logMemory('Batch processing start');
